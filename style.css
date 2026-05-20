@@ -1,0 +1,173 @@
+/* ── 面板基础 ── */
+#cs-panel {
+    position: fixed;
+    top: 64px;
+    right: 8px;
+    width: min(480px, calc(100vw - 16px));
+    max-height: min(620px, calc(100vh - 80px));
+    background: #111;
+    border: 1px solid #2c2c2c;
+    border-radius: 10px;
+    display: none;
+    flex-direction: column;
+    z-index: 99999;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7);
+    font-family: inherit;
+    overflow: hidden;
+    user-select: none;
+}
+
+/* ── 顶栏 ── */
+#cs-header {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 12px 14px;
+    border-bottom: 1px solid #1e1e1e;
+    flex-shrink: 0;
+}
+
+#cs-drag-handle {
+    color: #3a3a3a;
+    cursor: grab;
+    font-size: 16px;
+    line-height: 1;
+    flex-shrink: 0;
+    transition: color 0.15s;
+    touch-action: none;
+}
+#cs-drag-handle:hover { color: #666; }
+#cs-drag-handle:active { cursor: grabbing; }
+
+/* ── 输入框 ── */
+#cs-input {
+    flex: 1;
+    min-width: 80px;
+    background: #1e1e1e;
+    border: 1px solid #333;
+    border-radius: 5px;
+    color: #ddd;
+    padding: 7px 12px;
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.15s;
+    user-select: text;
+}
+#cs-input:focus { border-color: #555; }
+
+/* ── 按钮组 ── */
+#cs-btns {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+#cs-count {
+    font-size: 12px;
+    color: #555;
+    white-space: nowrap;
+    min-width: 36px;
+    text-align: center;
+}
+
+/* ── 按钮 ── */
+#cs-prev, #cs-next, #cs-theme, #cs-close {
+    background: none;
+    border: 1px solid #2a2a2a;
+    border-radius: 5px;
+    color: #666;
+    cursor: pointer;
+    padding: 5px 10px;
+    font-size: 13px;
+    line-height: 1.4;
+    transition: color 0.15s, border-color 0.15s;
+    flex-shrink: 0;
+}
+#cs-prev:hover, #cs-next:hover { color: #bbb; border-color: #444; }
+#cs-theme:hover { color: #aaa; border-color: #444; }
+#cs-close:hover { color: #e06c75; border-color: #e06c75; }
+
+/* ── 结果列表 ── */
+#cs-results {
+    overflow-y: auto;
+    flex: 1;
+    padding: 4px 0;
+    user-select: text;
+}
+
+.cs-item {
+    padding: 10px 16px;
+    cursor: pointer;
+    border-bottom: 1px solid #181818;
+    transition: background 0.1s;
+}
+.cs-item:hover { background: #1a1a1a; }
+.cs-item-active { background: #1e1e1e; border-left: 2px solid #666; padding-left: 14px; }
+
+.cs-meta { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+.cs-floor { font-size: 11px; color: #444; letter-spacing: 0.03em; }
+.cs-name  { font-size: 12px; color: #666; }
+.cs-snippet { font-size: 13px; color: #999; line-height: 1.6; word-break: break-all; }
+
+.cs-empty { text-align: center; padding: 24px; color: #444; font-size: 13px; }
+
+/* ── 高亮 ── */
+.cs-mark-list, .cs-mark {
+    background: rgba(229, 192, 123, 0.18);
+    color: #e5c07b;
+    border-radius: 2px;
+    padding: 0 1px;
+    font-style: normal;
+}
+.cs-current {
+    outline: 2px solid rgba(229, 192, 123, 0.3) !important;
+    outline-offset: 3px;
+    border-radius: 4px;
+}
+
+/* ── 缩放 handle ── */
+#cs-resize-handle {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 28px;
+    height: 28px;
+    cursor: se-resize;
+    touch-action: none;
+    background: linear-gradient(135deg, transparent 50%, #333 50%, transparent 60%, #333 60%, transparent 70%, #333 70%);
+    border-radius: 0 0 10px 0;
+}
+
+/* ── 白色主题 ── */
+#cs-panel.cs-light {
+    background: #f8f8f8;
+    border-color: #ddd;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+    color: #222;
+}
+#cs-panel.cs-light #cs-header { border-bottom-color: #e0e0e0; }
+#cs-panel.cs-light #cs-input { background: #fff; border-color: #ccc; color: #222; }
+#cs-panel.cs-light #cs-input:focus { border-color: #999; }
+#cs-panel.cs-light #cs-drag-handle { color: #ccc; }
+#cs-panel.cs-light #cs-drag-handle:hover { color: #999; }
+#cs-panel.cs-light #cs-count { color: #aaa; }
+#cs-panel.cs-light #cs-prev,
+#cs-panel.cs-light #cs-next,
+#cs-panel.cs-light #cs-theme,
+#cs-panel.cs-light #cs-close { border-color: #ddd; color: #aaa; }
+#cs-panel.cs-light #cs-prev:hover,
+#cs-panel.cs-light #cs-next:hover { color: #333; border-color: #bbb; }
+#cs-panel.cs-light #cs-close:hover { color: #c0392b; border-color: #c0392b; }
+#cs-panel.cs-light .cs-item { border-bottom-color: #efefef; }
+#cs-panel.cs-light .cs-item:hover { background: #f0f0f0; }
+#cs-panel.cs-light .cs-item-active { background: #ebebeb; border-left-color: #aaa; }
+#cs-panel.cs-light .cs-floor { color: #bbb; }
+#cs-panel.cs-light .cs-name  { color: #aaa; }
+#cs-panel.cs-light .cs-snippet { color: #555; }
+#cs-panel.cs-light .cs-empty { color: #bbb; }
+#cs-panel.cs-light .cs-mark-list,
+#cs-panel.cs-light .cs-mark { background: rgba(180, 130, 20, 0.12); color: #996600; }
+#cs-panel.cs-light #cs-resize-handle { background: linear-gradient(135deg, transparent 50%, #ccc 50%, transparent 60%, #ccc 60%, transparent 70%, #ccc 70%); }
