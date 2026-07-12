@@ -7,6 +7,7 @@ import android.view.Gravity;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 public class HomeActivity extends Activity {
     @Override
@@ -30,26 +31,37 @@ public class HomeActivity extends Activity {
         root.addView(note);
 
         Button duplicateButton = button("重复文件清理");
-        duplicateButton.setOnClickListener(v -> startActivity(new Intent(this, MainActivity.class)));
+        duplicateButton.setOnClickListener(v -> openFeature(ToolSession.Mode.DUPLICATE));
         root.addView(duplicateButton, marginTop(0));
 
         TextView duplicateDesc = new TextView(this);
-        duplicateDesc.setText("寻找字节级完全一致的副本，每组保留 1 份后批量删除。");
+        duplicateDesc.setText("寻找字节级完全一致的副本，每组保留 1 份后批量删除。不会复用上次文件夹或扫描结果。");
         duplicateDesc.setTextSize(13);
         duplicateDesc.setPadding(dp(6), dp(8), dp(6), dp(18));
         root.addView(duplicateDesc);
 
         Button renameButton = button("角色卡自动改名");
-        renameButton.setOnClickListener(v -> startActivity(new Intent(this, CardRenamerActivity.class)));
+        renameButton.setOnClickListener(v -> openFeature(ToolSession.Mode.RENAME));
         root.addView(renameButton, marginTop(0));
 
         TextView renameDesc = new TextView(this);
-        renameDesc.setText("读取 PNG / JSON 角色卡中的角色名，直接修改手机里的实际文件名。重名自动追加 (1)、(2)、(3)。");
+        renameDesc.setText("读取 PNG / JSON 卡片内部角色名，只修改手机中原文件的文件名。重名自动追加 (1)、(2)、(3)，不修改卡片内容，不生成新文件。");
         renameDesc.setTextSize(13);
         renameDesc.setPadding(dp(6), dp(8), dp(6), dp(18));
         root.addView(renameDesc);
 
         setContentView(root);
+    }
+
+    private void openFeature(ToolSession.Mode mode) {
+        ToolSession.Mode active = ToolSession.activeMode();
+        if (active != null && active != mode) {
+            Toast.makeText(this, "另一个功能仍在运行，请先退出后再使用。", Toast.LENGTH_LONG).show();
+            return;
+        }
+        Class<?> target = mode == ToolSession.Mode.DUPLICATE
+                ? MainActivity.class : GuardedCardRenamerActivity.class;
+        startActivity(new Intent(this, target));
     }
 
     private Button button(String text) {
