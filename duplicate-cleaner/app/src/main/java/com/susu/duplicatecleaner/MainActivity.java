@@ -19,9 +19,6 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.nio.charset.StandardCharsets;
 import java.text.DateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -33,8 +30,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public class MainActivity extends Activity {
     private static final int REQUEST_TREE = 1201;
-    private static final String PREFS = "duplicate_cleaner";
-    private static final String PREF_TREE_URI = "tree_uri";
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final AtomicBoolean cancelRequested = new AtomicBoolean(false);
@@ -55,12 +50,18 @@ public class MainActivity extends Activity {
     private List<DuplicateScanner.DuplicateGroup> groups = new ArrayList<>();
     private String lastLog = "";
     private boolean busy;
+    private boolean sessionAcquired;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        sessionAcquired = ToolSession.acquire(ToolSession.Mode.DUPLICATE);
+        if (!sessionAcquired) {
+            Toast.makeText(this, "角色卡改名功能仍在运行，请先退出该功能。", Toast.LENGTH_LONG).show();
+            finish();
+            return;
+        }
         buildUi();
-        restoreFolderPermission();
         refreshButtons();
     }
 
@@ -68,6 +69,8 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         cancelRequested.set(true);
         executor.shutdownNow();
+        clearSession();
+        if (sessionAcquired) ToolSession.release(ToolSession.Mode.DUPLICATE);
         super.onDestroy();
     }
 
@@ -79,26 +82,26 @@ public class MainActivity extends Activity {
         scroll.addView(root);
 
         TextView title = new TextView(this);
-        title.setText("重复文件清理器");
+        title.setText("重复文件清理");
         title.setTextSize(26);
         title.setTypeface(null, android.graphics.Typeface.BOLD);
         root.addView(title);
 
         TextView description = new TextView(this);
-        description.setText("只删除字节级完全一致的副本。大小筛选 → 完整 SHA-256 → 逐字节核对 → 删除前再次哈希并逐字节复核。任何不确定情况都会自动跳过。");
+        description.setText("每次进入都要重新选择文件夹并扫描。只删除字节级完全一致的副本：大小筛选 → 完整 SHA-256 → 逐字节核对 → 删除前再次哈希与逐字节复核。");
         description.setTextSize(15);
         description.setPadding(0, dp(8), 0, dp(14));
         root.addView(description);
 
         folderText = new TextView(this);
-        folderText.setText("尚未授权文件夹");
+        folderText.setText("尚未选择文件夹。本功能不会沿用上一次授权或扫描结果。");
         folderText.setTextSize(13);
         folderText.setTextIsSelectable(true);
         folderText.setPadding(dp(12), dp(12), dp(12), dp(12));
         folderText.setBackgroundColor(0xfff1f1f1);
         root.addView(folderText, matchWrap());
 
-        chooseButton = button("选择并授权文件夹");
+        chooseButton = button("重新选择文件夹");
         chooseButton.setOnClickListener(v -> chooseFolder());
         root.addView(chooseButton, marginTop(12));
 
@@ -119,7 +122,7 @@ public class MainActivity extends Activity {
         root.addView(progressBar, marginTop(14));
 
         statusText = new TextView(this);
-        statusText.setText("请选择文件夹。");
+        statusText.setText("请选择要扫描的文件夹。");
         statusText.setTextSize(14);
         statusText.setPadding(0, dp(8), 0, 0);
         root.addView(statusText);
@@ -136,7 +139,7 @@ public class MainActivity extends Activity {
         detailText.setPadding(dp(12), dp(12), dp(12), dp(12));
         detailText.setBackgroundColor(0xfff7f7f7);
         root.addView(detailText, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(360)));
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(380)));
 
         confirmationCheck = new CheckBox(this);
         confirmationCheck.setText("我已查看结果，确认每组保留 1 份，并永久删除其余已复核副本");
@@ -153,7 +156,7 @@ public class MainActivity extends Activity {
         root.addView(copyLogButton, marginTop(8));
 
         TextView warning = new TextView(this);
-        warning.setText("重要：删除是永久操作。第一次使用建议先选择一个小文件夹测试。本应用不会把“看起来相似”的图片当作重复文件，也不会处理读取失败、扫描后发生变化或无法再次确认的文件。");
+        warning.setText("删除完成、取消或异常后，本次文件夹和扫描结果都会失效；继续使用必须重新选择文件夹并重新扫描。改名功能不会读取本功能的数据。");
         warning.setTextSize(13);
         warning.setPadding(0, dp(18), 0, 0);
         root.addView(warning);
@@ -161,24 +164,12 @@ public class MainActivity extends Activity {
         setContentView(scroll);
     }
 
-    private void restoreFolderPermission() {
-        String saved = getSharedPreferences(PREFS, MODE_PRIVATE).getString(PREF_TREE_URI, null);
-        if (TextUtils.isEmpty(saved)) return;
-        try {
-            treeUri = Uri.parse(saved);
-            folderText.setText("已授权：\n" + treeUri);
-            statusText.setText("可以开始扫描。如果权限已经失效，请重新选择文件夹。");
-        } catch (Exception ignored) {
-            treeUri = null;
-        }
-    }
-
     private void chooseFolder() {
         if (busy) return;
+        clearSession();
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
                 | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
                 | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
         startActivityForResult(intent, REQUEST_TREE);
     }
@@ -186,25 +177,17 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != REQUEST_TREE || resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        if (requestCode != REQUEST_TREE || resultCode != RESULT_OK
+                || data == null || data.getData() == null) return;
 
-        Uri selected = data.getData();
-        int flags = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-        try {
-            getContentResolver().takePersistableUriPermission(selected, flags);
-            treeUri = selected;
-            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(PREF_TREE_URI, selected.toString()).apply();
-            groups = new ArrayList<>();
-            confirmationCheck.setChecked(false);
-            folderText.setText("已授权：\n" + selected);
-            statusText.setText("文件夹授权成功，可以开始扫描。");
-            summaryText.setText("");
-            detailText.setText("");
-            lastLog = "";
-        } catch (Exception e) {
-            treeUri = null;
-            statusText.setText("无法保存读写权限：" + safeMessage(e));
-        }
+        treeUri = data.getData();
+        groups = new ArrayList<>();
+        confirmationCheck.setChecked(false);
+        folderText.setText("本次已选择：\n" + treeUri);
+        statusText.setText("文件夹选择成功，请重新扫描。");
+        summaryText.setText("");
+        detailText.setText("");
+        lastLog = "";
         refreshButtons();
     }
 
@@ -226,11 +209,16 @@ public class MainActivity extends Activity {
                 DuplicateScanner.ScanResult result = scanner.scan(selected);
                 runOnUiThread(() -> showScanResult(result));
             } catch (DuplicateScanner.CancelledException e) {
-                runOnUiThread(() -> finishBusy("扫描已取消。"));
+                runOnUiThread(() -> {
+                    finishBusy("扫描已取消。继续使用请重新选择文件夹并扫描。");
+                    invalidateAfterOperation();
+                });
             } catch (Exception e) {
                 runOnUiThread(() -> {
                     finishBusy("扫描失败：" + safeMessage(e));
-                    detailText.setText("请重新授权文件夹后再试。\n\n" + e.getClass().getName() + ": " + safeMessage(e));
+                    detailText.setText("请重新选择文件夹后再试。\n\n"
+                            + e.getClass().getName() + ": " + safeMessage(e));
+                    invalidateAfterOperation();
                 });
             }
         });
@@ -250,7 +238,8 @@ public class MainActivity extends Activity {
         report.append("大小未知而跳过：").append(result.unknownSizeFiles).append('\n');
         report.append("读取失败而跳过：").append(result.unreadableFiles).append('\n');
         report.append("逐字节比较：").append(result.byteComparisons).append(" 次\n");
-        report.append("耗时：").append(String.format(Locale.CHINA, "%.1f 秒", result.elapsedMs / 1000.0)).append("\n\n");
+        report.append("耗时：").append(String.format(Locale.CHINA, "%.1f 秒",
+                result.elapsedMs / 1000.0)).append("\n\n");
 
         for (int i = 0; i < result.groups.size(); i++) {
             DuplicateScanner.DuplicateGroup group = result.groups.get(i);
@@ -263,11 +252,11 @@ public class MainActivity extends Activity {
             }
             report.append('\n');
         }
-
         if (result.groups.isEmpty()) report.append("没有发现字节级完全一致的重复文件。\n");
-        lastLog = "扫描时间：" + DateFormat.getDateTimeInstance().format(new Date()) + "\n" + report;
+
+        lastLog = "扫描时间：" + DateFormat.getDateTimeInstance().format(new Date())
+                + "\n" + report;
         detailText.setText(report.toString());
-        saveLog(lastLog);
         refreshButtons();
     }
 
@@ -279,9 +268,8 @@ public class MainActivity extends Activity {
             copies += group.files.size() - 1;
             bytes += group.reclaimableBytes();
         }
-        String message = "即将永久删除 " + copies + " 个副本，预计释放 " + formatBytes(bytes)
-                + "。\n\n删除前每个文件都会重新计算完整 SHA-256，并再次逐字节比较；任何变化或读取异常都会跳过。此操作不可撤销。";
-
+        String message = "即将永久删除 " + copies + " 个副本，预计释放 "
+                + formatBytes(bytes) + "。\n\n删除前会重新计算完整 SHA-256 并再次逐字节比较。任何变化或读取异常都会跳过。";
         new AlertDialog.Builder(this)
                 .setTitle("确认永久删除")
                 .setMessage(message)
@@ -303,26 +291,46 @@ public class MainActivity extends Activity {
                 DuplicateScanner.DeleteResult result = scanner.deleteVerifiedCopies(currentGroups);
                 runOnUiThread(() -> showDeleteResult(result));
             } catch (DuplicateScanner.CancelledException e) {
-                runOnUiThread(() -> finishBusy("删除任务已取消。已完成的删除无法撤销，未处理文件保持原样。"));
+                runOnUiThread(() -> {
+                    finishBusy("删除任务已取消。已删除内容无法撤销；继续使用请重新选择并扫描。");
+                    invalidateAfterOperation();
+                });
             } catch (Exception e) {
-                runOnUiThread(() -> finishBusy("删除任务异常终止：" + safeMessage(e)));
+                runOnUiThread(() -> {
+                    finishBusy("删除任务异常终止：" + safeMessage(e));
+                    invalidateAfterOperation();
+                });
             }
         });
     }
 
     private void showDeleteResult(DuplicateScanner.DeleteResult result) {
-        String summary = "删除完成：成功 " + result.deleted + "，安全跳过 " + result.skipped
-                + "，失败 " + result.failed + "，释放 " + formatBytes(result.reclaimedBytes);
+        String summary = "删除完成：成功 " + result.deleted + "，安全跳过 "
+                + result.skipped + "，失败 " + result.failed + "，释放 "
+                + formatBytes(result.reclaimedBytes);
         finishBusy(summary);
         summaryText.setText(summary);
-        String report = "删除时间：" + DateFormat.getDateTimeInstance().format(new Date()) + "\n"
-                + summary + "\n\n" + result.log;
-        lastLog = report;
-        detailText.setText(report);
-        saveLog(report);
+        lastLog = "删除时间：" + DateFormat.getDateTimeInstance().format(new Date())
+                + "\n" + summary + "\n\n" + result.log;
+        detailText.setText(lastLog);
+        invalidateAfterOperation();
+    }
+
+    private void invalidateAfterOperation() {
+        treeUri = null;
         groups = new ArrayList<>();
         confirmationCheck.setChecked(false);
+        folderText.setText("本次操作已结束。再次使用必须重新选择文件夹并重新扫描。");
         refreshButtons();
+    }
+
+    private void clearSession() {
+        treeUri = null;
+        groups = new ArrayList<>();
+        lastLog = "";
+        if (confirmationCheck != null) confirmationCheck.setChecked(false);
+        if (summaryText != null) summaryText.setText("");
+        if (detailText != null) detailText.setText("");
     }
 
     private void copyLog() {
@@ -330,18 +338,6 @@ public class MainActivity extends Activity {
         ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
         clipboard.setPrimaryClip(ClipData.newPlainText("重复文件清理记录", lastLog));
         Toast.makeText(this, "记录已复制", Toast.LENGTH_SHORT).show();
-    }
-
-    private void saveLog(String text) {
-        try {
-            File directory = new File(getFilesDir(), "logs");
-            if (!directory.exists()) directory.mkdirs();
-            File file = new File(directory, "duplicate-cleaner-" + System.currentTimeMillis() + ".txt");
-            try (FileOutputStream output = new FileOutputStream(file)) {
-                output.write(text.getBytes(StandardCharsets.UTF_8));
-            }
-        } catch (Exception ignored) {
-        }
     }
 
     private void setBusy(boolean value, String message) {
@@ -359,6 +355,7 @@ public class MainActivity extends Activity {
     }
 
     private void refreshButtons() {
+        if (chooseButton == null) return;
         chooseButton.setEnabled(!busy);
         scanButton.setEnabled(!busy && treeUri != null);
         cancelButton.setEnabled(busy);
@@ -376,7 +373,8 @@ public class MainActivity extends Activity {
     }
 
     private LinearLayout.LayoutParams matchWrap() {
-        return new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+        return new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
     }
 
@@ -404,6 +402,7 @@ public class MainActivity extends Activity {
 
     private static String safeMessage(Throwable throwable) {
         String message = throwable.getMessage();
-        return message == null || message.trim().isEmpty() ? throwable.getClass().getSimpleName() : message;
+        return message == null || message.trim().isEmpty()
+                ? throwable.getClass().getSimpleName() : message;
     }
 }
