@@ -37,12 +37,12 @@ public class CardRenamerActivity extends Activity {
     private Button chooseButton;
     private Button scanButton;
     private Button cancelButton;
+    private Button previewButton;
     private Button renameButton;
     private Button copyLogButton;
     private TextView folderText;
     private TextView statusText;
     private TextView summaryText;
-    private TextView detailText;
     private ProgressBar progressBar;
     private CheckBox confirmationCheck;
 
@@ -79,17 +79,12 @@ public class CardRenamerActivity extends Activity {
         root.addView(title);
 
         TextView description = new TextView(this);
-        description.setText("读取 PNG / JSON 角色卡内部记录的角色名，只修改手机中原文件的文件名。不修改卡片内容、不重新生成文件、不导出 ZIP。重名自动追加 (1)、(2)、(3)。");
+        description.setText("读取 PNG / JSON 内部角色名，只修改手机中原文件名。完整改名前后对照会放在独立的大列表页面中，不再挤在小窗口里。重名自动追加 (1)、(2)、(3)。");
         description.setTextSize(15);
         description.setPadding(0, dp(8), 0, dp(14));
         root.addView(description);
 
-        folderText = new TextView(this);
-        folderText.setText("尚未选择文件夹。本功能每次使用都必须重新选择并扫描。");
-        folderText.setTextSize(13);
-        folderText.setTextIsSelectable(true);
-        folderText.setPadding(dp(12), dp(12), dp(12), dp(12));
-        folderText.setBackgroundColor(0xfff1f1f1);
+        folderText = infoBox("尚未选择文件夹。本功能每次使用都必须重新选择并扫描。");
         root.addView(folderText, matchWrap());
 
         chooseButton = button("重新选择文件夹");
@@ -118,22 +113,17 @@ public class CardRenamerActivity extends Activity {
         statusText.setPadding(0, dp(8), 0, 0);
         root.addView(statusText);
 
-        summaryText = new TextView(this);
-        summaryText.setTextSize(17);
-        summaryText.setTypeface(null, android.graphics.Typeface.BOLD);
-        summaryText.setPadding(0, dp(18), 0, dp(8));
-        root.addView(summaryText);
+        summaryText = infoBox("扫描完成后，这里只显示摘要；完整列表请进入独立预览页查看。");
+        summaryText.setTextSize(15);
+        root.addView(summaryText, marginTop(14));
 
-        detailText = new TextView(this);
-        detailText.setTextSize(13);
-        detailText.setTextIsSelectable(true);
-        detailText.setPadding(dp(12), dp(12), dp(12), dp(12));
-        detailText.setBackgroundColor(0xfff7f7f7);
-        root.addView(detailText, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(380)));
+        previewButton = button("查看完整改名前后对照");
+        previewButton.setContentDescription("查看完整改名预览");
+        previewButton.setOnClickListener(v -> openPreview());
+        root.addView(previewButton, marginTop(10));
 
         confirmationCheck = new CheckBox(this);
-        confirmationCheck.setText("我已查看改名前后对照，确认直接修改这些原文件的文件名");
+        confirmationCheck.setText("我已进入完整预览页核对改名前后对照，确认直接修改这些原文件的文件名");
         confirmationCheck.setPadding(0, dp(14), 0, 0);
         confirmationCheck.setOnCheckedChangeListener((buttonView, isChecked) -> refreshButtons());
         root.addView(confirmationCheck);
@@ -147,7 +137,7 @@ public class CardRenamerActivity extends Activity {
         root.addView(copyLogButton, marginTop(8));
 
         TextView warning = new TextView(this);
-        warning.setText("改名不会改变角色卡内部角色名。扫描后如文件被移动、修改或目标名称被占用，该文件会跳过；完成后本次选择与扫描结果会清空，下一次必须重新选择文件夹扫描。");
+        warning.setText("改名不会改变角色卡内部角色名，也不会重新生成文件。扫描后如文件被移动、修改或目标名称被占用，该文件会安全跳过。完成后必须重新选择文件夹扫描。");
         warning.setTextSize(13);
         warning.setPadding(0, dp(18), 0, 0);
         root.addView(warning);
@@ -173,11 +163,11 @@ public class CardRenamerActivity extends Activity {
 
         treeUri = data.getData();
         pendingItems = new ArrayList<>();
+        RenamePreviewSession.clear();
         confirmationCheck.setChecked(false);
         folderText.setText("本次已选择：\n" + treeUri);
-        statusText.setText("文件夹选择成功。请点击扫描；切换功能后本次结果不会保留。");
-        summaryText.setText("");
-        detailText.setText("");
+        statusText.setText("文件夹选择成功，请点击扫描。");
+        summaryText.setText("等待扫描。完整结果会进入独立预览页面。");
         lastLog = "";
         refreshButtons();
     }
@@ -185,12 +175,12 @@ public class CardRenamerActivity extends Activity {
     private void startScan() {
         if (busy || treeUri == null) return;
         pendingItems = new ArrayList<>();
+        RenamePreviewSession.clear();
         confirmationCheck.setChecked(false);
         lastLog = "";
         cancelRequested.set(false);
         setBusy(true, "正在枚举 PNG / JSON 文件……");
-        summaryText.setText("");
-        detailText.setText("");
+        summaryText.setText("正在扫描，请稍候……");
 
         Uri selected = treeUri;
         executor.execute(() -> {
@@ -204,8 +194,7 @@ public class CardRenamerActivity extends Activity {
             } catch (Exception e) {
                 runOnUiThread(() -> {
                     finishBusy("扫描失败：" + safeMessage(e));
-                    detailText.setText("请重新选择文件夹后再试。\n\n"
-                            + e.getClass().getName() + ": " + safeMessage(e));
+                    summaryText.setText("扫描失败，请重新选择文件夹。\n" + safeMessage(e));
                 });
             }
         });
@@ -213,19 +202,16 @@ public class CardRenamerActivity extends Activity {
 
     private void showScanResult(CardRenamer.ScanResult result) {
         pendingItems = result.renameItems;
+        RenamePreviewSession.set(result.renameItems, result.allItems);
         String summary = String.format(Locale.CHINA,
-                "扫描完成：识别 %d 张，需改名 %d 张，已是正确名字 %d 张，未识别 %d 张",
+                "扫描完成\n识别：%d 张\n需改名：%d 张\n已经正确：%d 张\n未识别 / 安全跳过：%d 张\n扫描全部文件：%d 个\nPNG / JSON：%d 个\n耗时：%.1f 秒",
                 result.recognizedCards, result.renameItems.size(),
-                result.unchangedCards, result.failedCards);
-        finishBusy(summary);
+                result.unchangedCards, result.failedCards,
+                result.totalFiles, result.supportedFiles, result.elapsedMs / 1000.0);
+        finishBusy("扫描完成，请进入完整预览页核对。");
         summaryText.setText(summary);
 
-        StringBuilder report = new StringBuilder();
-        report.append("扫描全部文件：").append(result.totalFiles).append('\n');
-        report.append("PNG / JSON：").append(result.supportedFiles).append('\n');
-        report.append("耗时：").append(String.format(Locale.CHINA, "%.1f 秒",
-                result.elapsedMs / 1000.0)).append("\n\n");
-
+        StringBuilder report = new StringBuilder(summary).append("\n\n");
         int number = 1;
         for (CardRenamer.RenameItem item : result.renameItems) {
             report.append("【待改名 ").append(number++).append("】\n")
@@ -233,25 +219,14 @@ public class CardRenamerActivity extends Activity {
                     .append("角色名：").append(item.characterName).append('\n')
                     .append("新文件名：").append(item.targetName).append("\n\n");
         }
-
-        boolean hasFailures = false;
-        for (CardRenamer.RenameItem item : result.allItems) {
-            if (item.error == null) continue;
-            if (!hasFailures) {
-                hasFailures = true;
-                report.append("—— 未改名 / 安全跳过 ——\n");
-            }
-            report.append(item.path).append("：").append(item.error).append('\n');
-        }
-
-        if (result.renameItems.isEmpty()) {
-            report.append("没有需要改名的角色卡。\n");
-        }
-
         lastLog = "扫描时间：" + DateFormat.getDateTimeInstance().format(new Date())
                 + "\n" + report;
-        detailText.setText(report.toString());
         refreshButtons();
+    }
+
+    private void openPreview() {
+        if (busy || RenamePreviewSession.allItems().isEmpty()) return;
+        startActivity(new Intent(this, RenamePreviewActivity.class));
     }
 
     private void showRenameConfirmation() {
@@ -295,17 +270,16 @@ public class CardRenamerActivity extends Activity {
         String summary = "改名完成：成功 " + result.renamed
                 + "，安全跳过 " + result.skipped + "，失败 " + result.failed;
         finishBusy(summary);
-        summaryText.setText(summary);
-        String report = "改名时间：" + DateFormat.getDateTimeInstance().format(new Date())
+        summaryText.setText(summary + "\n\n详细记录可点击“复制扫描 / 改名记录”保存。");
+        lastLog = "改名时间：" + DateFormat.getDateTimeInstance().format(new Date())
                 + "\n" + summary + "\n\n" + result.log;
-        lastLog = report;
-        detailText.setText(report);
         invalidateAfterOperation();
     }
 
     private void invalidateAfterOperation() {
         treeUri = null;
         pendingItems = new ArrayList<>();
+        RenamePreviewSession.clear();
         confirmationCheck.setChecked(false);
         folderText.setText("本次操作已结束。再次使用必须重新选择文件夹并重新扫描。");
         refreshButtons();
@@ -314,9 +288,9 @@ public class CardRenamerActivity extends Activity {
     private void clearCurrentSession() {
         treeUri = null;
         pendingItems = new ArrayList<>();
+        RenamePreviewSession.clear();
         confirmationCheck.setChecked(false);
-        summaryText.setText("");
-        detailText.setText("");
+        summaryText.setText("等待扫描。完整结果会进入独立预览页面。");
         lastLog = "";
     }
 
@@ -345,9 +319,20 @@ public class CardRenamerActivity extends Activity {
         chooseButton.setEnabled(!busy);
         scanButton.setEnabled(!busy && treeUri != null);
         cancelButton.setEnabled(busy);
+        previewButton.setEnabled(!busy && !RenamePreviewSession.allItems().isEmpty());
         confirmationCheck.setEnabled(!busy && !pendingItems.isEmpty());
         renameButton.setEnabled(!busy && !pendingItems.isEmpty() && confirmationCheck.isChecked());
         copyLogButton.setEnabled(!busy && !TextUtils.isEmpty(lastLog));
+    }
+
+    private TextView infoBox(String text) {
+        TextView view = new TextView(this);
+        view.setText(text);
+        view.setTextSize(13);
+        view.setTextIsSelectable(true);
+        view.setPadding(dp(12), dp(12), dp(12), dp(12));
+        view.setBackgroundColor(0xfff3f3f3);
+        return view;
     }
 
     private Button button(String text) {
