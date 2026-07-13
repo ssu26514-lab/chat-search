@@ -28,7 +28,7 @@ public class HomeActivity extends Activity {
         root.addView(title);
 
         TextView note = new TextView(this);
-        note.setText("三个功能完全独立，不会同时运行。进入任意功能后都需要重新选择文件夹并重新扫描；浏览功能的收藏夹会单独暂存在应用中，直到移动或取消收藏。");
+        note.setText("四个功能完全独立，不会同时运行。进入任意功能后都需要重新选择文件夹并重新扫描；浏览功能的收藏夹会单独暂存在应用中，直到移动或取消收藏。");
         note.setTextSize(15);
         note.setPadding(0, dp(10), 0, dp(24));
         root.addView(note);
@@ -43,12 +43,23 @@ public class HomeActivity extends Activity {
         duplicateDesc.setPadding(dp(6), dp(8), dp(6), dp(18));
         root.addView(duplicateDesc);
 
+        Button semanticButton = button("角色卡有效内容查重");
+        semanticButton.setOnClickListener(v -> openFeature(
+                ToolSession.Mode.SEMANTIC_DUPLICATE));
+        root.addView(semanticButton, marginTop(0));
+
+        TextView semanticDesc = new TextView(this);
+        semanticDesc.setText("识别“文件不同但导入后内容一样”的角色卡。分别展示封面、大小、chara/ccv3 兼容性，以及人设、开场白、世界书、正则和扩展差异；有效内容完全一致时可明确选择保留一个。 ");
+        semanticDesc.setTextSize(13);
+        semanticDesc.setPadding(dp(6), dp(8), dp(6), dp(18));
+        root.addView(semanticDesc);
+
         Button renameButton = button("角色卡自动改名");
         renameButton.setOnClickListener(v -> openFeature(ToolSession.Mode.RENAME));
         root.addView(renameButton, marginTop(0));
 
         TextView renameDesc = new TextView(this);
-        renameDesc.setText("读取 PNG / JSON 卡片内部角色名，只修改手机中原文件的文件名。重名自动追加 (1)、(2)、(3)，不修改卡片内容，不生成新文件。");
+        renameDesc.setText("读取 PNG / JSON 卡片内部角色名，只修改手机中原文件的文件名。重名自动追加 (1)、(2)、(3)，不修改卡片内容，不生成新文件。 ");
         renameDesc.setTextSize(13);
         renameDesc.setPadding(dp(6), dp(8), dp(6), dp(18));
         root.addView(renameDesc);
@@ -58,7 +69,7 @@ public class HomeActivity extends Activity {
         root.addView(browserButton, marginTop(0));
 
         TextView browserDesc = new TextView(this);
-        browserDesc.setText("按文件名排序浏览 PNG，只看 CHAR 人设和全部开场白；开场白左右滑动切换，可全屏查看。满意的卡片先收藏，最后集中移动到手机文件夹。");
+        browserDesc.setText("按文件名排序浏览 PNG，只看 CHAR 人设和全部开场白；开场白左右滑动切换，可全屏查看。满意的卡片先收藏，最后集中移动到手机文件夹。 ");
         browserDesc.setTextSize(13);
         browserDesc.setPadding(dp(6), dp(8), dp(6), dp(18));
         root.addView(browserDesc);
@@ -69,12 +80,15 @@ public class HomeActivity extends Activity {
     private void openFeature(ToolSession.Mode mode) {
         ToolSession.Mode active = ToolSession.activeMode();
         if (active != null && active != mode) {
-            Toast.makeText(this, "另一个功能仍在运行，请先退出后再使用。", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "另一个功能仍在运行，请先退出后再使用。",
+                    Toast.LENGTH_LONG).show();
             return;
         }
         Class<?> target;
         if (mode == ToolSession.Mode.DUPLICATE) {
             target = MainActivity.class;
+        } else if (mode == ToolSession.Mode.SEMANTIC_DUPLICATE) {
+            target = SemanticDuplicateActivity.class;
         } else if (mode == ToolSession.Mode.RENAME) {
             target = GuardedCardRenamerActivity.class;
         } else {
