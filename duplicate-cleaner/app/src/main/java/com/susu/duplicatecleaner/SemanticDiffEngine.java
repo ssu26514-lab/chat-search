@@ -4,10 +4,8 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -57,8 +55,8 @@ final class SemanticDiffEngine {
                 SemanticCardParser.worldbookEntries(left),
                 SemanticCardParser.worldbookEntries(right));
         String regex = compareNamedMaps("正则脚本",
-                SemanticCardParser.collectRegexScripts(left.extensions),
-                SemanticCardParser.collectRegexScripts(right));
+                SemanticRegexExtractor.collect(left.extensions),
+                SemanticRegexExtractor.collect(right.extensions));
         String extensions = compareTopLevelObject("扩展功能", left.extensions, right.extensions);
         String other = compareTopLevelObject("其他有效字段", left.other, right.other);
         String packaging = comparePackaging(left.record, right.record);
