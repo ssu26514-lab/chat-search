@@ -3,6 +3,7 @@ package com.susu.duplicatecleaner;
 final class ToolSession {
     enum Mode {
         DUPLICATE,
+        SEMANTIC_DUPLICATE,
         RENAME,
         BROWSER
     }
