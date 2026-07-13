@@ -37,6 +37,7 @@ public class MainActivity extends Activity {
     private Button chooseButton;
     private Button scanButton;
     private Button cancelButton;
+    private Button previewButton;
     private Button deleteButton;
     private Button copyLogButton;
     private TextView folderText;
@@ -57,7 +58,7 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         sessionAcquired = ToolSession.acquire(ToolSession.Mode.DUPLICATE);
         if (!sessionAcquired) {
-            Toast.makeText(this, "角色卡改名功能仍在运行，请先退出该功能。", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "另一个文件工具仍在运行，请先退出该功能。", Toast.LENGTH_LONG).show();
             finish();
             return;
         }
@@ -88,17 +89,12 @@ public class MainActivity extends Activity {
         root.addView(title);
 
         TextView description = new TextView(this);
-        description.setText("每次进入都要重新选择文件夹并扫描。只删除字节级完全一致的副本：大小筛选 → 完整 SHA-256 → 逐字节核对 → 删除前再次哈希与逐字节复核。");
+        description.setText("每次进入都要重新选择文件夹并扫描。只删除字节级完全一致的副本：大小筛选 → 完整 SHA-256 → 逐字节核对 → 删除前再次哈希与逐字节复核。完整重复组可进入独立大页面查看，并逐组选择保留哪个文件。");
         description.setTextSize(15);
         description.setPadding(0, dp(8), 0, dp(14));
         root.addView(description);
 
-        folderText = new TextView(this);
-        folderText.setText("尚未选择文件夹。本功能不会沿用上一次授权或扫描结果。");
-        folderText.setTextSize(13);
-        folderText.setTextIsSelectable(true);
-        folderText.setPadding(dp(12), dp(12), dp(12), dp(12));
-        folderText.setBackgroundColor(0xfff1f1f1);
+        folderText = infoBox("尚未选择文件夹。本功能不会沿用上一次授权或扫描结果。");
         root.addView(folderText, matchWrap());
 
         chooseButton = button("重新选择文件夹");
@@ -139,10 +135,15 @@ public class MainActivity extends Activity {
         detailText.setPadding(dp(12), dp(12), dp(12), dp(12));
         detailText.setBackgroundColor(0xfff7f7f7);
         root.addView(detailText, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(380)));
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(260)));
+
+        previewButton = button("查看完整重复组并选择保留文件");
+        previewButton.setContentDescription("查看完整重复组并选择保留文件");
+        previewButton.setOnClickListener(v -> openPreview());
+        root.addView(previewButton, marginTop(10));
 
         confirmationCheck = new CheckBox(this);
-        confirmationCheck.setText("我已查看结果，确认每组保留 1 份，并永久删除其余已复核副本");
+        confirmationCheck.setText("我已查看重复组，确认每组保留所选文件，并永久删除其余已复核副本");
         confirmationCheck.setPadding(0, dp(14), 0, 0);
         confirmationCheck.setOnCheckedChangeListener((buttonView, isChecked) -> refreshButtons());
         root.addView(confirmationCheck);
@@ -156,7 +157,7 @@ public class MainActivity extends Activity {
         root.addView(copyLogButton, marginTop(8));
 
         TextView warning = new TextView(this);
-        warning.setText("删除完成、取消或异常后，本次文件夹和扫描结果都会失效；继续使用必须重新选择文件夹并重新扫描。改名功能不会读取本功能的数据。");
+        warning.setText("原有自动推荐保留逻辑仍然存在；如果你不修改，默认保留推荐文件。进入完整页面后可逐组改选。删除完成、取消或异常后，本次扫描结果都会失效。 ");
         warning.setTextSize(13);
         warning.setPadding(0, dp(18), 0, 0);
         root.addView(warning);
@@ -182,6 +183,7 @@ public class MainActivity extends Activity {
 
         treeUri = data.getData();
         groups = new ArrayList<>();
+        DuplicatePreviewSession.clear();
         confirmationCheck.setChecked(false);
         folderText.setText("本次已选择：\n" + treeUri);
         statusText.setText("文件夹选择成功，请重新扫描。");
@@ -194,12 +196,13 @@ public class MainActivity extends Activity {
     private void startScan() {
         if (busy || treeUri == null) return;
         groups = new ArrayList<>();
+        DuplicatePreviewSession.clear();
         confirmationCheck.setChecked(false);
         lastLog = "";
         cancelRequested.set(false);
         setBusy(true, "正在枚举文件……");
         summaryText.setText("");
-        detailText.setText("");
+        detailText.setText("正在扫描，请稍候……");
 
         Uri selected = treeUri;
         executor.execute(() -> {
@@ -226,6 +229,7 @@ public class MainActivity extends Activity {
 
     private void showScanResult(DuplicateScanner.ScanResult result) {
         groups = result.groups;
+        DuplicatePreviewSession.set(groups);
         int copies = result.duplicateCopies();
         String summary = String.format(Locale.CHINA,
                 "扫描完成：%d 组完全重复，%d 个可删除副本，可释放 %s",
@@ -246,7 +250,7 @@ public class MainActivity extends Activity {
             report.append("【重复组 ").append(i + 1).append("】")
                     .append(group.files.size()).append(" 个文件，单个 ")
                     .append(formatBytes(group.keeper().size)).append('\n');
-            report.append("保留：").append(group.keeper().path).append('\n');
+            report.append("默认推荐保留：").append(group.keeper().path).append('\n');
             for (int j = 1; j < group.files.size(); j++) {
                 report.append("待删：").append(group.files.get(j).path).append('\n');
             }
@@ -260,16 +264,22 @@ public class MainActivity extends Activity {
         refreshButtons();
     }
 
+    private void openPreview() {
+        if (busy || DuplicatePreviewSession.groups().isEmpty()) return;
+        startActivity(new Intent(this, DuplicatePreviewActivity.class));
+    }
+
     private void showDeleteConfirmation() {
         if (busy || groups.isEmpty() || !confirmationCheck.isChecked()) return;
+        List<DuplicateScanner.DuplicateGroup> selectedGroups = DuplicatePreviewSession.groupsWithSelections();
         int copies = 0;
         long bytes = 0;
-        for (DuplicateScanner.DuplicateGroup group : groups) {
+        for (DuplicateScanner.DuplicateGroup group : selectedGroups) {
             copies += group.files.size() - 1;
             bytes += group.reclaimableBytes();
         }
         String message = "即将永久删除 " + copies + " 个副本，预计释放 "
-                + formatBytes(bytes) + "。\n\n删除前会重新计算完整 SHA-256 并再次逐字节比较。任何变化或读取异常都会跳过。";
+                + formatBytes(bytes) + "。\n\n每组会保留你在完整页面中选择的文件；未改选的组保留推荐文件。删除前会重新计算完整 SHA-256 并再次逐字节比较。";
         new AlertDialog.Builder(this)
                 .setTitle("确认永久删除")
                 .setMessage(message)
@@ -282,7 +292,8 @@ public class MainActivity extends Activity {
         if (busy || groups.isEmpty()) return;
         cancelRequested.set(false);
         setBusy(true, "正在删除前重新复核……");
-        List<DuplicateScanner.DuplicateGroup> currentGroups = new ArrayList<>(groups);
+        List<DuplicateScanner.DuplicateGroup> currentGroups =
+                DuplicatePreviewSession.groupsWithSelections();
 
         executor.execute(() -> {
             DuplicateScanner scanner = new DuplicateScanner(getContentResolver(), cancelRequested,
@@ -319,6 +330,7 @@ public class MainActivity extends Activity {
     private void invalidateAfterOperation() {
         treeUri = null;
         groups = new ArrayList<>();
+        DuplicatePreviewSession.clear();
         confirmationCheck.setChecked(false);
         folderText.setText("本次操作已结束。再次使用必须重新选择文件夹并重新扫描。");
         refreshButtons();
@@ -327,6 +339,7 @@ public class MainActivity extends Activity {
     private void clearSession() {
         treeUri = null;
         groups = new ArrayList<>();
+        DuplicatePreviewSession.clear();
         lastLog = "";
         if (confirmationCheck != null) confirmationCheck.setChecked(false);
         if (summaryText != null) summaryText.setText("");
@@ -359,9 +372,20 @@ public class MainActivity extends Activity {
         chooseButton.setEnabled(!busy);
         scanButton.setEnabled(!busy && treeUri != null);
         cancelButton.setEnabled(busy);
+        previewButton.setEnabled(!busy && !DuplicatePreviewSession.groups().isEmpty());
         deleteButton.setEnabled(!busy && !groups.isEmpty() && confirmationCheck.isChecked());
         confirmationCheck.setEnabled(!busy && !groups.isEmpty());
         copyLogButton.setEnabled(!busy && !TextUtils.isEmpty(lastLog));
+    }
+
+    private TextView infoBox(String text) {
+        TextView view = new TextView(this);
+        view.setText(text);
+        view.setTextSize(13);
+        view.setTextIsSelectable(true);
+        view.setPadding(dp(12), dp(12), dp(12), dp(12));
+        view.setBackgroundColor(0xfff1f1f1);
+        return view;
     }
 
     private Button button(String text) {
