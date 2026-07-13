@@ -9,6 +9,24 @@ final class RenamePlanCorrector {
     private RenamePlanCorrector() {
     }
 
+    static CardRenamer.ScanResult correctResult(CardRenamer.ScanResult result) {
+        keepAlreadyValidNumberedNames(result.renameItems, result.allItems);
+        int unchanged = 0;
+        for (CardRenamer.RenameItem item : result.allItems) {
+            if (item != null && item.error == null && !item.needsRename) unchanged++;
+        }
+        return new CardRenamer.ScanResult(
+                result.totalFiles,
+                result.supportedFiles,
+                result.recognizedCards,
+                unchanged,
+                result.failedCards,
+                result.elapsedMs,
+                result.renameItems,
+                result.allItems
+        );
+    }
+
     static int keepAlreadyValidNumberedNames(List<CardRenamer.RenameItem> pending,
                                              List<CardRenamer.RenameItem> all) {
         int corrected = 0;
