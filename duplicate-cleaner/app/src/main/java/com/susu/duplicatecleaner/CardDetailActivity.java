@@ -51,11 +51,24 @@ public class CardDetailActivity extends Activity {
     }
 
     private void buildUi() {
+        LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setPadding(dp(10), dp(10), dp(10), dp(10));
+
+        Button backButton = button("← 返回卡片列表");
+        backButton.setContentDescription("返回卡片列表");
+        backButton.setOnClickListener(v -> finish());
+        page.addView(backButton, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
         ScrollView scroll = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(14), dp(14), dp(14), dp(24));
+        root.setPadding(dp(4), dp(8), dp(4), dp(24));
         scroll.addView(root);
+        page.addView(scroll, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
         TextView title = new TextView(this);
         title.setText(card.characterName);
@@ -139,12 +152,12 @@ public class CardDetailActivity extends Activity {
         root.addView(fullGreeting, marginTop(6));
 
         TextView hint = new TextView(this);
-        hint.setText("提示：在开场白区域左右滑动，可切换全部开场白；点击人设、开场白或图片可全屏查看。");
+        hint.setText("提示：顶部返回键始终可用；在开场白区域左右滑动可切换全部开场白，点击人设、开场白或图片可全屏查看。");
         hint.setTextSize(12);
         hint.setPadding(0, dp(12), 0, 0);
         root.addView(hint);
 
-        setContentView(scroll);
+        setContentView(page);
     }
 
     private void showGreeting(int index) {
