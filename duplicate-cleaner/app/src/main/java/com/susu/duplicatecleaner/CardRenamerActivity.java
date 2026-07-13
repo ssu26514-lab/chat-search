@@ -79,7 +79,7 @@ public class CardRenamerActivity extends Activity {
         root.addView(title);
 
         TextView description = new TextView(this);
-        description.setText("读取 PNG / JSON 内部角色名，只修改手机中原文件名。完整改名前后对照会放在独立的大列表页面中，不再挤在小窗口里。重名自动追加 (1)、(2)、(3)。");
+        description.setText("读取 PNG / JSON 内部角色名，只修改手机中原文件名。完整改名前后对照会放在独立的大列表页面中，不再挤在小窗口里。重名自动追加 (1)、(2)、(3)。已经是角色名或角色名 (数字) 的文件会保持不变。");
         description.setTextSize(15);
         description.setPadding(0, dp(8), 0, dp(14));
         root.addView(description);
@@ -187,7 +187,8 @@ public class CardRenamerActivity extends Activity {
             CardRenamer renamer = new CardRenamer(getContentResolver(), cancelRequested,
                     message -> runOnUiThread(() -> statusText.setText(message)));
             try {
-                CardRenamer.ScanResult result = renamer.scan(selected);
+                CardRenamer.ScanResult result = RenamePlanCorrector.correctResult(
+                        renamer.scan(selected));
                 runOnUiThread(() -> showScanResult(result));
             } catch (CardRenamer.CancelledException e) {
                 runOnUiThread(() -> finishBusy("扫描已取消。"));
