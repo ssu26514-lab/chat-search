@@ -3,7 +3,8 @@ package com.susu.duplicatecleaner;
 final class ToolSession {
     enum Mode {
         DUPLICATE,
-        RENAME
+        RENAME,
+        BROWSER
     }
 
     private static Mode activeMode;
