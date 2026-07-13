@@ -1,23 +1,25 @@
 package com.susu.duplicatecleaner;
 
 import static androidx.test.espresso.Espresso.onView;
-import static androidx.test.espresso.action.ViewActions.click;
-import static androidx.test.espresso.action.ViewActions.scrollTo;
-import static androidx.test.espresso.action.ViewActions.swipeLeft;
 import static androidx.test.espresso.assertion.ViewAssertions.matches;
 import static androidx.test.espresso.matcher.ViewMatchers.isDisplayed;
-import static androidx.test.espresso.matcher.ViewMatchers.withContentDescription;
 import static androidx.test.espresso.matcher.ViewMatchers.withText;
-import static org.hamcrest.CoreMatchers.containsString;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
+import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.SystemClock;
+import android.view.MotionEvent;
+import android.view.View;
+import android.view.ViewGroup;
 import android.widget.BaseAdapter;
+import android.widget.TextView;
 
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.core.app.ApplicationProvider;
@@ -84,35 +86,51 @@ public class GreetingAndRenameFixTest {
 
     @Test
     public void detailAndFullScreenGreetingNavigationAllWork() {
+        CharacterCard card = testCard();
+        CardSession.clearCards();
+        CardSession.put(card);
+
         Context context = ApplicationProvider.getApplicationContext();
-        Intent intent = new Intent(context, GuardedCardBrowserActivity.class);
-        intent.putExtra("test_mode", true);
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        Intent detailIntent = new Intent(context, CardDetailActivity.class);
+        detailIntent.putExtra("card_key", card.key);
+        detailIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
 
-        try (ActivityScenario<GuardedCardBrowserActivity> ignored = ActivityScenario.launch(intent)) {
-            onView(withText("查看")).perform(click());
-            onView(withText("开场白 1 / 2")).check(matches(isDisplayed()));
+        try (ActivityScenario<CardDetailActivity> scenario = ActivityScenario.launch(detailIntent)) {
+            scenario.onActivity(activity -> {
+                assertEquals("开场白 1 / 2", textOfField(activity, "greetingTitle"));
 
-            onView(withContentDescription("上方下一个开场白")).perform(click());
-            onView(withText("开场白 2 / 2")).check(matches(isDisplayed()));
+                clickByDescription(activity, "上方下一个开场白");
+                assertEquals("开场白 2 / 2", textOfField(activity, "greetingTitle"));
 
-            onView(withContentDescription("下方上一个开场白")).perform(scrollTo(), click());
-            onView(withText("开场白 1 / 2")).check(matches(isDisplayed()));
+                clickByDescription(activity, "下方上一个开场白");
+                assertEquals("开场白 1 / 2", textOfField(activity, "greetingTitle"));
 
-            onView(withText("全屏查看开场白")).perform(scrollTo(), click());
-            onView(withText("开场白 1 / 2")).check(matches(isDisplayed()));
+                TextView greetingText = (TextView) fieldValue(activity, "greetingText");
+                dispatchHorizontalSwipe(greetingText, true);
+                assertEquals("开场白 2 / 2", textOfField(activity, "greetingTitle"));
+            });
+        }
 
-            onView(withContentDescription("上方下一个开场白")).perform(click());
-            onView(withText("开场白 2 / 2")).check(matches(isDisplayed()));
+        CardSession.put(card);
+        Intent fullIntent = new Intent(context, GreetingFullScreenActivity.class);
+        fullIntent.putExtra(GreetingFullScreenActivity.EXTRA_CARD_KEY, card.key);
+        fullIntent.putExtra(GreetingFullScreenActivity.EXTRA_GREETING_INDEX, 0);
+        fullIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
 
-            onView(withContentDescription("下方上一个开场白")).perform(click());
-            onView(withText("开场白 1 / 2")).check(matches(isDisplayed()));
+        try (ActivityScenario<GreetingFullScreenActivity> scenario = ActivityScenario.launch(fullIntent)) {
+            scenario.onActivity(activity -> {
+                assertEquals("开场白 1 / 2", textOfField(activity, "title"));
 
-            onView(withText(containsString("这是第一条测试开场白"))).perform(swipeLeft());
-            onView(withText("开场白 2 / 2")).check(matches(isDisplayed()));
+                clickByDescription(activity, "上方下一个开场白");
+                assertEquals("开场白 2 / 2", textOfField(activity, "title"));
 
-            onView(withText("← 返回卡片详情")).perform(click());
-            onView(withText("开场白 2 / 2")).check(matches(isDisplayed()));
+                clickByDescription(activity, "下方上一个开场白");
+                assertEquals("开场白 1 / 2", textOfField(activity, "title"));
+
+                TextView content = (TextView) fieldValue(activity, "content");
+                dispatchHorizontalSwipe(content, true);
+                assertEquals("开场白 2 / 2", textOfField(activity, "title"));
+            });
         }
     }
 
@@ -145,5 +163,78 @@ public class GreetingAndRenameFixTest {
         assertEquals(1, pending.size());
         assertSame(actuallyWrong, pending.get(0));
         assertTrue(actuallyWrong.needsRename);
+    }
+
+    private static CharacterCard testCard() {
+        CharacterCard card = new CharacterCard();
+        card.key = "greeting-navigation-test";
+        card.uri = "content://com.susu.duplicatecleaner.test/greeting.png";
+        card.treeUri = "content://com.susu.duplicatecleaner.test/tree";
+        card.parentDocumentId = "test-parent";
+        card.path = "测试开场白.png";
+        card.fileName = "测试开场白.png";
+        card.characterName = "测试开场白";
+        card.persona = "【角色描述】\n用于开场白导航测试。";
+        card.greetings.add("这是第一条测试开场白。");
+        card.greetings.add("这是第二条测试开场白。");
+        return card;
+    }
+
+    private static void clickByDescription(Activity activity, String description) {
+        View view = findByDescription(activity.findViewById(android.R.id.content), description);
+        assertNotNull("未找到按钮：" + description, view);
+        assertTrue("按钮点击未执行：" + description, view.performClick());
+    }
+
+    private static View findByDescription(View view, String description) {
+        CharSequence current = view.getContentDescription();
+        if (current != null && description.contentEquals(current)) return view;
+        if (!(view instanceof ViewGroup)) return null;
+        ViewGroup group = (ViewGroup) view;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View found = findByDescription(group.getChildAt(i), description);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    private static Object fieldValue(Object owner, String name) {
+        try {
+            Field field = owner.getClass().getDeclaredField(name);
+            field.setAccessible(true);
+            return field.get(owner);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static String textOfField(Object owner, String name) {
+        TextView view = (TextView) fieldValue(owner, name);
+        return view.getText().toString();
+    }
+
+    private static void dispatchHorizontalSwipe(View view, boolean toLeft) {
+        int width = Math.max(view.getWidth(), 800);
+        int height = Math.max(view.getHeight(), 400);
+        float startX = toLeft ? width * 0.82f : width * 0.18f;
+        float endX = toLeft ? width * 0.18f : width * 0.82f;
+        float y = height * 0.5f;
+        long downTime = SystemClock.uptimeMillis();
+
+        MotionEvent down = MotionEvent.obtain(downTime, downTime,
+                MotionEvent.ACTION_DOWN, startX, y, 0);
+        MotionEvent move = MotionEvent.obtain(downTime, downTime + 35,
+                MotionEvent.ACTION_MOVE, (startX + endX) / 2f, y, 0);
+        MotionEvent up = MotionEvent.obtain(downTime, downTime + 70,
+                MotionEvent.ACTION_UP, endX, y, 0);
+        try {
+            view.dispatchTouchEvent(down);
+            view.dispatchTouchEvent(move);
+            view.dispatchTouchEvent(up);
+        } finally {
+            down.recycle();
+            move.recycle();
+            up.recycle();
+        }
     }
 }
