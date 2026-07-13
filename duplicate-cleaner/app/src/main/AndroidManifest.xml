@@ -22,12 +22,27 @@
             android:screenOrientation="unspecified" />
 
         <activity
+            android:name=".DuplicatePreviewActivity"
+            android:exported="false"
+            android:screenOrientation="unspecified" />
+
+        <activity
             android:name=".GuardedCardRenamerActivity"
             android:exported="false"
             android:screenOrientation="unspecified" />
 
         <activity
+            android:name=".RenamePreviewActivity"
+            android:exported="false"
+            android:screenOrientation="unspecified" />
+
+        <activity
             android:name=".GuardedCardBrowserActivity"
+            android:exported="false"
+            android:screenOrientation="unspecified" />
+
+        <activity
+            android:name=".FavoriteMoveActivity"
             android:exported="false"
             android:screenOrientation="unspecified" />
 
