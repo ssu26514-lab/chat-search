@@ -76,24 +76,9 @@ final class CharacterCardReader {
     ScanResult scan(Uri treeUri) throws Exception {
         long started = System.currentTimeMillis();
         List<CharacterCard> cards = enumeratePng(treeUri);
-        int success = 0;
-        int failed = 0;
-        for (int i = 0; i < cards.size(); i++) {
-            checkCancelled();
-            CharacterCard card = cards.get(i);
-            try {
-                fillCardContent(card);
-                success++;
-            } catch (Exception e) {
-                card.error = safeMessage(e);
-                failed++;
-            }
-            if ((i + 1) % 5 == 0 || i + 1 == cards.size()) {
-                progress("正在解析角色卡：" + (i + 1) + " / " + cards.size());
-            }
-        }
         cards.sort(NATURAL_CARD_COMPARATOR);
-        return new ScanResult(cards.size(), success, failed,
+        progress("轻量索引完成：" + cards.size() + " 张 PNG；人设和开场白将在点击查看时读取");
+        return new ScanResult(cards.size(), cards.size(), 0,
                 System.currentTimeMillis() - started, cards);
     }
 
@@ -163,7 +148,7 @@ final class CharacterCardReader {
                 }
             }
             if (folders % 10 == 0 || queue.isEmpty()) {
-                progress("正在枚举目录：" + folders + " 个文件夹，" + cards.size() + " 张 PNG");
+                progress("正在建立轻量索引：" + folders + " 个文件夹，" + cards.size() + " 张 PNG");
             }
         }
         return cards;
