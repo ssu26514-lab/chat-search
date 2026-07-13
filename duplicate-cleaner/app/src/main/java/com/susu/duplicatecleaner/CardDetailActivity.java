@@ -17,6 +17,8 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 public class CardDetailActivity extends Activity {
+    private static final int REQUEST_GREETING_FULLSCREEN = 8101;
+
     private CharacterCard card;
     private int greetingIndex;
     private TextView greetingTitle;
@@ -48,6 +50,15 @@ public class CardDetailActivity extends Activity {
         super.onResume();
         immersive();
         updateFavoriteButton();
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_GREETING_FULLSCREEN && resultCode == RESULT_OK && data != null) {
+            showGreeting(data.getIntExtra(GreetingFullScreenActivity.EXTRA_GREETING_INDEX,
+                    greetingIndex));
+        }
     }
 
     private void buildUi() {
@@ -138,6 +149,9 @@ public class CardDetailActivity extends Activity {
         greetingHeader.addView(fullGreeting, new LinearLayout.LayoutParams(dp(154), dp(52)));
         root.addView(greetingHeader, marginTop(18));
 
+        // 非全屏状态也在正文上方放一组切换按钮。
+        root.addView(greetingNavigation("上方"), marginTop(6));
+
         greetingText = contentBox("");
         greetingText.setMinHeight(dp(240));
         gestureDetector = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
@@ -150,33 +164,45 @@ public class CardDetailActivity extends Activity {
             public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
                 if (e1 == null || e2 == null) return false;
                 float distance = e2.getX() - e1.getX();
-                if (Math.abs(distance) < dp(60) || Math.abs(velocityX) < 300) return false;
+                float vertical = e2.getY() - e1.getY();
+                if (Math.abs(distance) < dp(60) || Math.abs(distance) <= Math.abs(vertical)
+                        || Math.abs(velocityX) < 300) return false;
                 if (distance < 0) nextGreeting();
                 else previousGreeting();
                 return true;
             }
         });
-        greetingText.setOnTouchListener((v, event) -> gestureDetector.onTouchEvent(event));
+        greetingText.setOnTouchListener((v, event) -> {
+            gestureDetector.onTouchEvent(event);
+            return false;
+        });
         greetingText.setOnClickListener(v -> openCurrentGreetingFullScreen());
         root.addView(greetingText, marginTop(6));
 
-        LinearLayout navigation = new LinearLayout(this);
-        navigation.setOrientation(LinearLayout.HORIZONTAL);
-        Button previous = button("← 上一个");
-        Button next = button("下一个 →");
-        previous.setOnClickListener(v -> previousGreeting());
-        next.setOnClickListener(v -> nextGreeting());
-        navigation.addView(previous, weighted());
-        navigation.addView(next, weightedWithMargin());
-        root.addView(navigation, marginTop(7));
+        // 正文下方继续保留一组，长开场白看完后不用回到顶部。
+        root.addView(greetingNavigation("下方"), marginTop(7));
 
         TextView hint = new TextView(this);
-        hint.setText("提示：收藏和图片全屏位于图片右侧；人设与开场白的全屏按钮位于内容上方。开场白区域仍可左右滑动切换。 ");
+        hint.setText("提示：开场白在非全屏和全屏状态下都可以左右滑动；上方和下方均有“上一个 / 下一个”。 ");
         hint.setTextSize(12);
         hint.setPadding(0, dp(12), 0, 0);
         root.addView(hint);
 
         setContentView(page);
+    }
+
+    private LinearLayout greetingNavigation(String position) {
+        LinearLayout navigation = new LinearLayout(this);
+        navigation.setOrientation(LinearLayout.HORIZONTAL);
+        Button previous = button("← 上一个");
+        previous.setContentDescription(position + "上一个开场白");
+        Button next = button("下一个 →");
+        next.setContentDescription(position + "下一个开场白");
+        previous.setOnClickListener(v -> previousGreeting());
+        next.setOnClickListener(v -> nextGreeting());
+        navigation.addView(previous, weighted());
+        navigation.addView(next, weightedWithMargin());
+        return navigation;
     }
 
     private void openImageFullScreen() {
@@ -209,10 +235,12 @@ public class CardDetailActivity extends Activity {
     private void openCurrentGreetingFullScreen() {
         if (card.greetingCount() == 0) {
             openFullText("开场白", "（这张卡没有读取到开场白）");
-        } else {
-            openFullText("开场白 " + (greetingIndex + 1) + " / " + card.greetingCount(),
-                    card.greetings.get(greetingIndex));
+            return;
         }
+        Intent intent = new Intent(this, GreetingFullScreenActivity.class);
+        intent.putExtra(GreetingFullScreenActivity.EXTRA_CARD_KEY, card.key);
+        intent.putExtra(GreetingFullScreenActivity.EXTRA_GREETING_INDEX, greetingIndex);
+        startActivityForResult(intent, REQUEST_GREETING_FULLSCREEN);
     }
 
     private void openFullText(String title, String text) {
