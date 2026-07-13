@@ -27,6 +27,21 @@
             android:screenOrientation="unspecified" />
 
         <activity
+            android:name=".SemanticDuplicateActivity"
+            android:exported="false"
+            android:screenOrientation="unspecified" />
+
+        <activity
+            android:name=".SemanticGroupActivity"
+            android:exported="false"
+            android:screenOrientation="unspecified" />
+
+        <activity
+            android:name=".SemanticPairDiffActivity"
+            android:exported="false"
+            android:screenOrientation="unspecified" />
+
+        <activity
             android:name=".GuardedCardRenamerActivity"
             android:exported="false"
             android:screenOrientation="unspecified" />
