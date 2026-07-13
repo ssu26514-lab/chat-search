@@ -2,6 +2,7 @@ package com.susu.duplicatecleaner;
 
 import static androidx.test.espresso.Espresso.onView;
 import static androidx.test.espresso.action.ViewActions.click;
+import static androidx.test.espresso.assertion.ViewAssertions.doesNotExist;
 import static androidx.test.espresso.assertion.ViewAssertions.matches;
 import static androidx.test.espresso.matcher.ViewMatchers.isDisplayed;
 import static androidx.test.espresso.matcher.ViewMatchers.withText;
@@ -110,8 +111,10 @@ public class SemanticDuplicateFeatureTest {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
 
         try (ActivityScenario<SemanticGroupActivity> ignored = ActivityScenario.launch(intent)) {
-            onView(withText("保留这个文件")).check(matches(isDisplayed())).perform(click());
+            // 默认推荐索引 1（同时包含 chara + ccv3）；点击另一项后必须切换到索引 0。
             assertEquals(1, SemanticDuplicateSession.keeperIndex(exactGroup.id));
+            onView(withText("保留这个文件")).check(matches(isDisplayed())).perform(click());
+            assertEquals(0, SemanticDuplicateSession.keeperIndex(exactGroup.id));
             onView(withText(containsString("当前保留："))).check(matches(isDisplayed()));
         }
     }
@@ -127,13 +130,8 @@ public class SemanticDuplicateFeatureTest {
         try (ActivityScenario<SemanticGroupActivity> ignored = ActivityScenario.launch(intent)) {
             onView(withText(containsString("只能查看差异，不提供一键删除")))
                     .check(matches(isDisplayed()));
-            try {
-                onView(withText("重新验证后删除其余语义重复副本"))
-                        .check(matches(isDisplayed()));
-                fail("内容有变化的组不应显示删除按钮");
-            } catch (AssertionError expected) {
-                // 正确：删除按钮不可见。
-            }
+            onView(withText("重新验证后删除其余语义重复副本"))
+                    .check(doesNotExist());
         }
     }
 
