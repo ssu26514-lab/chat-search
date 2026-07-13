@@ -58,9 +58,7 @@ public class CardDetailActivity extends Activity {
         Button backButton = button("← 返回卡片列表");
         backButton.setContentDescription("返回卡片列表");
         backButton.setOnClickListener(v -> finish());
-        page.addView(backButton, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
+        page.addView(backButton, matchWrap());
 
         ScrollView scroll = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
@@ -83,24 +81,45 @@ public class CardDetailActivity extends Activity {
         file.setPadding(0, dp(4), 0, dp(10));
         root.addView(file);
 
+        LinearLayout imageArea = new LinearLayout(this);
+        imageArea.setOrientation(LinearLayout.HORIZONTAL);
+        imageArea.setGravity(Gravity.CENTER_VERTICAL);
+
         ImageView image = new ImageView(this);
         image.setImageURI(card.contentUri());
         image.setScaleType(ImageView.ScaleType.FIT_CENTER);
         image.setAdjustViewBounds(true);
-        image.setOnClickListener(v -> {
-            Intent intent = new Intent(this, FullScreenImageActivity.class);
-            intent.putExtra("image_uri", card.uri);
-            startActivity(intent);
-        });
-        root.addView(image, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(280)));
+        image.setOnClickListener(v -> openImageFullScreen());
+        imageArea.addView(image, new LinearLayout.LayoutParams(0, dp(285), 1f));
+
+        LinearLayout imageActions = new LinearLayout(this);
+        imageActions.setOrientation(LinearLayout.VERTICAL);
+        imageActions.setPadding(dp(8), 0, 0, 0);
 
         favoriteButton = button("");
         favoriteButton.setOnClickListener(v -> toggleFavorite());
-        root.addView(favoriteButton, marginTop(8));
+        imageActions.addView(favoriteButton, new LinearLayout.LayoutParams(dp(112), dp(64)));
+
+        Button imageFullScreen = button("图片全屏");
+        imageFullScreen.setContentDescription("全屏查看图片");
+        imageFullScreen.setOnClickListener(v -> openImageFullScreen());
+        LinearLayout.LayoutParams imageFullParams = new LinearLayout.LayoutParams(dp(112), dp(64));
+        imageFullParams.topMargin = dp(8);
+        imageActions.addView(imageFullScreen, imageFullParams);
+
+        imageArea.addView(imageActions);
+        root.addView(imageArea, matchWrap());
         updateFavoriteButton();
 
-        TextView personaHeader = sectionTitle("CHAR 人设");
+        LinearLayout personaHeader = new LinearLayout(this);
+        personaHeader.setOrientation(LinearLayout.HORIZONTAL);
+        personaHeader.setGravity(Gravity.CENTER_VERTICAL);
+        TextView personaTitle = sectionTitle("CHAR 人设");
+        personaHeader.addView(personaTitle, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        Button fullPersona = button("全屏查看人设");
+        fullPersona.setOnClickListener(v -> openFullText("CHAR 人设", card.persona));
+        personaHeader.addView(fullPersona, new LinearLayout.LayoutParams(dp(142), dp(52)));
         root.addView(personaHeader, marginTop(16));
 
         TextView persona = contentBox(card.persona);
@@ -108,12 +127,16 @@ public class CardDetailActivity extends Activity {
         persona.setOnClickListener(v -> openFullText("CHAR 人设", card.persona));
         root.addView(persona, marginTop(6));
 
-        Button fullPersona = button("全屏查看人设");
-        fullPersona.setOnClickListener(v -> openFullText("CHAR 人设", card.persona));
-        root.addView(fullPersona, marginTop(6));
-
+        LinearLayout greetingHeader = new LinearLayout(this);
+        greetingHeader.setOrientation(LinearLayout.HORIZONTAL);
+        greetingHeader.setGravity(Gravity.CENTER_VERTICAL);
         greetingTitle = sectionTitle("");
-        root.addView(greetingTitle, marginTop(18));
+        greetingHeader.addView(greetingTitle, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        Button fullGreeting = button("全屏查看开场白");
+        fullGreeting.setOnClickListener(v -> openCurrentGreetingFullScreen());
+        greetingHeader.addView(fullGreeting, new LinearLayout.LayoutParams(dp(154), dp(52)));
+        root.addView(greetingHeader, marginTop(18));
 
         greetingText = contentBox("");
         greetingText.setMinHeight(dp(240));
@@ -147,17 +170,19 @@ public class CardDetailActivity extends Activity {
         navigation.addView(next, weightedWithMargin());
         root.addView(navigation, marginTop(7));
 
-        Button fullGreeting = button("全屏查看当前开场白");
-        fullGreeting.setOnClickListener(v -> openCurrentGreetingFullScreen());
-        root.addView(fullGreeting, marginTop(6));
-
         TextView hint = new TextView(this);
-        hint.setText("提示：顶部返回键始终可用；在开场白区域左右滑动可切换全部开场白，点击人设、开场白或图片可全屏查看。");
+        hint.setText("提示：收藏和图片全屏位于图片右侧；人设与开场白的全屏按钮位于内容上方。开场白区域仍可左右滑动切换。 ");
         hint.setTextSize(12);
         hint.setPadding(0, dp(12), 0, 0);
         root.addView(hint);
 
         setContentView(page);
+    }
+
+    private void openImageFullScreen() {
+        Intent intent = new Intent(this, FullScreenImageActivity.class);
+        intent.putExtra("image_uri", card.uri);
+        startActivity(intent);
     }
 
     private void showGreeting(int index) {
@@ -209,7 +234,7 @@ public class CardDetailActivity extends Activity {
     private void updateFavoriteButton() {
         if (favoriteButton == null || card == null) return;
         favoriteButton.setText(FavoriteStore.contains(this, card.uri)
-                ? "★ 已收藏（点击取消）" : "☆ 收藏到应用");
+                ? "★ 已收藏\n点击取消" : "☆ 收藏");
     }
 
     private TextView sectionTitle(String text) {
@@ -238,10 +263,14 @@ public class CardDetailActivity extends Activity {
         return button;
     }
 
-    private LinearLayout.LayoutParams marginTop(int top) {
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+    private LinearLayout.LayoutParams matchWrap() {
+        return new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
+    }
+
+    private LinearLayout.LayoutParams marginTop(int top) {
+        LinearLayout.LayoutParams params = matchWrap();
         params.topMargin = dp(top);
         return params;
     }
