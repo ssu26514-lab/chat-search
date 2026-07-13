@@ -2,6 +2,7 @@ package com.susu.duplicatecleaner;
 
 import static androidx.test.espresso.Espresso.onView;
 import static androidx.test.espresso.action.ViewActions.click;
+import static androidx.test.espresso.action.ViewActions.scrollTo;
 import static androidx.test.espresso.action.ViewActions.swipeLeft;
 import static androidx.test.espresso.assertion.ViewAssertions.matches;
 import static androidx.test.espresso.matcher.ViewMatchers.isDisplayed;
@@ -95,10 +96,10 @@ public class GreetingAndRenameFixTest {
             onView(withContentDescription("上方下一个开场白")).perform(click());
             onView(withText("开场白 2 / 2")).check(matches(isDisplayed()));
 
-            onView(withContentDescription("下方上一个开场白")).perform(click());
+            onView(withContentDescription("下方上一个开场白")).perform(scrollTo(), click());
             onView(withText("开场白 1 / 2")).check(matches(isDisplayed()));
 
-            onView(withText("全屏查看开场白")).perform(click());
+            onView(withText("全屏查看开场白")).perform(scrollTo(), click());
             onView(withText("开场白 1 / 2")).check(matches(isDisplayed()));
 
             onView(withContentDescription("上方下一个开场白")).perform(click());
