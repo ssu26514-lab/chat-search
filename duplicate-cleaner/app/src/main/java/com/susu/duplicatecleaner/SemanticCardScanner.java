@@ -7,7 +7,6 @@ import android.provider.DocumentsContract;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -128,6 +127,8 @@ final class SemanticCardScanner {
             try {
                 SemanticCardParser.ParsedPayload payload =
                         SemanticCardParser.parse(resolver, seed);
+                // 使用逐条脚本提取器统计，避免把 regex_scripts 容器误算成一条脚本。
+                payload.record.regexCount = SemanticRegexExtractor.count(payload.extensions);
                 parsed.add(payload.record);
             } catch (Exception e) {
                 failures.add(new Failure(seed.path, safeMessage(e)));
@@ -223,9 +224,8 @@ final class SemanticCardScanner {
             for (SemanticCardParser.CardRecord member : members) {
                 if (member.payloadConflict) safe = false;
             }
-            String title = bestTitle(members);
             groups.add(new Group("exact:" + entry.getKey(), GroupType.EXACT_CONTENT,
-                    title, new ArrayList<>(members), safe));
+                    bestTitle(members), new ArrayList<>(members), safe));
         }
         return groups;
     }
