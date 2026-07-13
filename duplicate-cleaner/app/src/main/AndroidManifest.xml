@@ -25,5 +25,25 @@
             android:name=".GuardedCardRenamerActivity"
             android:exported="false"
             android:screenOrientation="unspecified" />
+
+        <activity
+            android:name=".GuardedCardBrowserActivity"
+            android:exported="false"
+            android:screenOrientation="unspecified" />
+
+        <activity
+            android:name=".CardDetailActivity"
+            android:exported="false"
+            android:screenOrientation="unspecified" />
+
+        <activity
+            android:name=".FullScreenTextActivity"
+            android:exported="false"
+            android:screenOrientation="unspecified" />
+
+        <activity
+            android:name=".FullScreenImageActivity"
+            android:exported="false"
+            android:screenOrientation="unspecified" />
     </application>
 </manifest>
