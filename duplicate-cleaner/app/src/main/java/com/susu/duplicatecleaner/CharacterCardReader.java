@@ -83,17 +83,11 @@ final class CharacterCardReader {
     }
 
     CharacterCard reload(CharacterCard card) throws Exception {
-        CharacterCard fresh = new CharacterCard();
-        fresh.key = card.key;
-        fresh.treeUri = card.treeUri;
-        fresh.uri = card.uri;
-        fresh.parentDocumentId = card.parentDocumentId;
-        fresh.path = card.path;
-        fresh.fileName = card.fileName;
-        fresh.size = card.size;
-        fresh.modified = card.modified;
-        fillCardContent(fresh);
-        return fresh;
+        // 直接把解析结果写回列表中的同一个对象。
+        // 这样详情页读取到 22 条开场白后，返回列表会同步显示 22，
+        // 不会继续保留轻量索引阶段的“0 个”。
+        fillCardContent(card);
+        return card;
     }
 
     private List<CharacterCard> enumeratePng(Uri treeUri) throws Exception {
@@ -207,9 +201,9 @@ final class CharacterCardReader {
                     if ("tEXt".equals(type) && length <= MAX_TEXT_CHUNK) {
                         byte[] data = new byte[(int) length];
                         input.readFully(data);
-                        JSONObject json = parseTextChunk(data);
+                        JSONObject parsed = parseTextChunk(data);
                         skipFully(input, 4L);
-                        if (json != null) return json;
+                        if (parsed != null) return parsed;
                     } else {
                         skipFully(input, length + 4L);
                     }
