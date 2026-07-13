@@ -6,6 +6,7 @@ import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.AbsListView;
 import android.widget.BaseAdapter;
 import android.widget.Button;
 import android.widget.LinearLayout;
@@ -31,6 +32,7 @@ public class GuardedCardBrowserActivity extends CardBrowserV2Activity {
     private View originalMoveButton;
     private Button scanAreaToggle;
     private Button quickMoveToggle;
+    private ListView cardList;
     private boolean scanAreaExpanded = true;
     private boolean quickMoveExpanded;
 
@@ -51,6 +53,7 @@ public class GuardedCardBrowserActivity extends CardBrowserV2Activity {
         super.onResume();
         syncMovedCards();
         autoCollapseAfterScan();
+        postGreetingLabelRefresh();
     }
 
     @Override
@@ -59,6 +62,7 @@ public class GuardedCardBrowserActivity extends CardBrowserV2Activity {
         if (hasFocus) {
             syncMovedCards();
             autoCollapseAfterScan();
+            postGreetingLabelRefresh();
         }
     }
 
@@ -81,9 +85,9 @@ public class GuardedCardBrowserActivity extends CardBrowserV2Activity {
             return;
         }
 
-        ListView list = findListView(findViewById(android.R.id.content));
-        if (list == null || !(list.getParent() instanceof LinearLayout)) return;
-        LinearLayout parent = (LinearLayout) list.getParent();
+        cardList = findListView(findViewById(android.R.id.content));
+        if (cardList == null || !(cardList.getParent() instanceof LinearLayout)) return;
+        LinearLayout parent = (LinearLayout) cardList.getParent();
 
         LinearLayout compactBar = new LinearLayout(this);
         compactBar.setOrientation(LinearLayout.HORIZONTAL);
@@ -116,7 +120,7 @@ public class GuardedCardBrowserActivity extends CardBrowserV2Activity {
         });
         compactBar.addView(quickMoveToggle, weightedMargin());
 
-        int index = parent.indexOfChild(list);
+        int index = parent.indexOfChild(cardList);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -127,16 +131,31 @@ public class GuardedCardBrowserActivity extends CardBrowserV2Activity {
         quickMoveExpanded = false;
         applyQuickMoveVisibility();
 
+        cardList.setOnScrollListener(new AbsListView.OnScrollListener() {
+            @Override
+            public void onScrollStateChanged(AbsListView view, int scrollState) {
+                refreshVisibleGreetingLabels();
+            }
+
+            @Override
+            public void onScroll(AbsListView view, int firstVisibleItem,
+                                 int visibleItemCount, int totalItemCount) {
+                refreshVisibleGreetingLabels();
+            }
+        });
+
         BaseAdapter adapter = readAdapter();
         if (adapter != null) {
             adapter.registerDataSetObserver(new DataSetObserver() {
                 @Override
                 public void onChanged() {
                     autoCollapseAfterScan();
+                    postGreetingLabelRefresh();
                 }
             });
         }
         autoCollapseAfterScan();
+        postGreetingLabelRefresh();
     }
 
     private void autoCollapseAfterScan() {
@@ -167,6 +186,45 @@ public class GuardedCardBrowserActivity extends CardBrowserV2Activity {
         }
     }
 
+    private void postGreetingLabelRefresh() {
+        if (cardList != null) cardList.post(this::refreshVisibleGreetingLabels);
+    }
+
+    private void refreshVisibleGreetingLabels() {
+        if (cardList == null || cardList.getAdapter() == null) return;
+        int first = cardList.getFirstVisiblePosition();
+        for (int i = 0; i < cardList.getChildCount(); i++) {
+            int position = first + i;
+            if (position < 0 || position >= cardList.getAdapter().getCount()) continue;
+            Object item = cardList.getAdapter().getItem(position);
+            if (!(item instanceof CharacterCard)) continue;
+            CharacterCard card = (CharacterCard) item;
+            TextView label = findGreetingLabel(cardList.getChildAt(i));
+            if (label == null || card.error != null) continue;
+            if (card.persona == null) {
+                label.setText("开场白：点击查看后读取");
+            } else {
+                label.setText("开场白：" + card.greetingCount() + " 个");
+            }
+        }
+    }
+
+    private TextView findGreetingLabel(View view) {
+        if (view instanceof TextView) {
+            CharSequence text = ((TextView) view).getText();
+            if (text != null && text.toString().startsWith("开场白：")) {
+                return (TextView) view;
+            }
+        }
+        if (!(view instanceof ViewGroup)) return null;
+        ViewGroup group = (ViewGroup) view;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            TextView found = findGreetingLabel(group.getChildAt(i));
+            if (found != null) return found;
+        }
+        return null;
+    }
+
     @SuppressWarnings("unchecked")
     private void syncMovedCards() {
         List<String> movedUris = MovedCardStore.consume(this);
@@ -195,6 +253,7 @@ public class GuardedCardBrowserActivity extends CardBrowserV2Activity {
             refreshButtons.setAccessible(true);
             updateCounts.invoke(this);
             refreshButtons.invoke(this);
+            postGreetingLabelRefresh();
         } catch (Exception e) {
             Toast.makeText(this, "移动已完成；列表同步失败时请重新扫描。", Toast.LENGTH_LONG).show();
         }
