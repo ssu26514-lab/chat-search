@@ -58,6 +58,7 @@ final class FavoriteStore {
             if (!removing.contains(card.uri)) next.add(card);
         }
         save(context, next);
+        MovedCardStore.record(context, uris);
     }
 
     static synchronized void clear(Context context) {
