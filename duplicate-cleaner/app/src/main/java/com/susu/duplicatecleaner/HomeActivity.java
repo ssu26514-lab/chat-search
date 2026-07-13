@@ -6,6 +6,7 @@ import android.os.Bundle;
 import android.view.Gravity;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -14,9 +15,11 @@ public class HomeActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        ScrollView scroll = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(20), dp(24), dp(20), dp(24));
+        scroll.addView(root);
 
         TextView title = new TextView(this);
         title.setText("角色卡文件工具");
@@ -25,7 +28,7 @@ public class HomeActivity extends Activity {
         root.addView(title);
 
         TextView note = new TextView(this);
-        note.setText("两个功能完全独立，不会同时运行。进入任意功能后都需要重新选择文件夹并重新扫描。");
+        note.setText("三个功能完全独立，不会同时运行。进入任意功能后都需要重新选择文件夹并重新扫描；浏览功能的收藏夹会单独暂存在应用中，直到移动或取消收藏。");
         note.setTextSize(15);
         note.setPadding(0, dp(10), 0, dp(24));
         root.addView(note);
@@ -50,7 +53,17 @@ public class HomeActivity extends Activity {
         renameDesc.setPadding(dp(6), dp(8), dp(6), dp(18));
         root.addView(renameDesc);
 
-        setContentView(root);
+        Button browserButton = button("角色卡浏览与收藏");
+        browserButton.setOnClickListener(v -> openFeature(ToolSession.Mode.BROWSER));
+        root.addView(browserButton, marginTop(0));
+
+        TextView browserDesc = new TextView(this);
+        browserDesc.setText("按文件名排序浏览 PNG，只看 CHAR 人设和全部开场白；开场白左右滑动切换，可全屏查看。满意的卡片先收藏，最后集中移动到手机文件夹。");
+        browserDesc.setTextSize(13);
+        browserDesc.setPadding(dp(6), dp(8), dp(6), dp(18));
+        root.addView(browserDesc);
+
+        setContentView(scroll);
     }
 
     private void openFeature(ToolSession.Mode mode) {
@@ -59,8 +72,14 @@ public class HomeActivity extends Activity {
             Toast.makeText(this, "另一个功能仍在运行，请先退出后再使用。", Toast.LENGTH_LONG).show();
             return;
         }
-        Class<?> target = mode == ToolSession.Mode.DUPLICATE
-                ? MainActivity.class : GuardedCardRenamerActivity.class;
+        Class<?> target;
+        if (mode == ToolSession.Mode.DUPLICATE) {
+            target = MainActivity.class;
+        } else if (mode == ToolSession.Mode.RENAME) {
+            target = GuardedCardRenamerActivity.class;
+        } else {
+            target = GuardedCardBrowserActivity.class;
+        }
         startActivity(new Intent(this, target));
     }
 
