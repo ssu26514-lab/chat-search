@@ -5,7 +5,14 @@ import java.util.List;
 import java.util.Map;
 
 final class CardSession {
-    private static final Map<String, CharacterCard> CARDS = new LinkedHashMap<>();
+    private static final int MAX_LOADED_CARDS = 24;
+    private static final LinkedHashMap<String, CharacterCard> CARDS =
+            new LinkedHashMap<String, CharacterCard>(32, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, CharacterCard> eldest) {
+                    return size() > MAX_LOADED_CARDS;
+                }
+            };
     private static String fullScreenTitle = "";
     private static String fullScreenText = "";
 
@@ -14,10 +21,13 @@ final class CardSession {
 
     static synchronized void replace(List<CharacterCard> cards) {
         CARDS.clear();
-        for (CharacterCard card : cards) CARDS.put(card.key, card);
+        for (CharacterCard card : cards) {
+            if (card != null && card.persona != null) put(card);
+        }
     }
 
     static synchronized void put(CharacterCard card) {
+        if (card == null || card.key == null) return;
         CARDS.put(card.key, card);
     }
 
