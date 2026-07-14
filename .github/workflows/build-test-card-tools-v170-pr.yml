@@ -1,0 +1,57 @@
+name: Build and UI Test Card File Tools v1.7.0
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'duplicate-cleaner/**'
+      - '.github/workflows/build-test-card-tools-v170-pr.yml'
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK components
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Compile app and UI tests
+        working-directory: duplicate-cleaner
+        run: gradle :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run plain PNG cleanup and all regression tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: cd duplicate-cleaner && gradle :app:connectedDebugAndroidTest --stacktrace
+      - name: Prepare APK
+        run: cp duplicate-cleaner/app/build/outputs/apk/debug/app-debug.apk card-file-tools-v1.7.0.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: card-file-tools-v170-tested-apk
+          path: card-file-tools-v1.7.0.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: card-tools-v170-test-reports
+          path: |
+            duplicate-cleaner/app/build/reports/androidTests/connected/
+            duplicate-cleaner/app/build/outputs/androidTest-results/connected/
+          if-no-files-found: ignore
