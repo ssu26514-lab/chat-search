@@ -5,6 +5,7 @@ final class ToolSession {
         DUPLICATE,
         SEMANTIC_DUPLICATE,
         PLAIN_PNG_CLEANUP,
+        FILE_CLASSIFIER,
         RENAME,
         BROWSER
     }
