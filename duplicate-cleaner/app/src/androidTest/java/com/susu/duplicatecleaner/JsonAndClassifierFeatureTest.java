@@ -130,7 +130,7 @@ public class JsonAndClassifierFeatureTest {
                      ActivityScenario.launch(intent)) {
             onView(withText("非角色JSON（30）")).check(matches(isDisplayed()))
                     .perform(click());
-            onView(withText(containsString("非角色卡 JSON")))
+            onView(withText(containsString("当前：非角色卡 JSON")))
                     .check(matches(isDisplayed()));
             onView(withText("移动已选择文件")).check(matches(isDisplayed()));
             onView(withText("永久删除已选择普通图片"))
