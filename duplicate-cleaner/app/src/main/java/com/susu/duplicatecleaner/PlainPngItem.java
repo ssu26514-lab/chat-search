@@ -5,6 +5,7 @@ import android.net.Uri;
 final class PlainPngItem {
     enum Type {
         PLAIN_IMAGE,
+        NON_CARD_JSON,
         DAMAGED_OR_UNREADABLE
     }
 
@@ -37,6 +38,8 @@ final class PlainPngItem {
         card.characterName = fileName;
         card.size = size;
         card.modified = modified;
+        card.fileFormat = fileName != null && fileName.toLowerCase().endsWith(".json")
+                ? "JSON" : "PNG";
         return card;
     }
 }
