@@ -26,6 +26,11 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
+import java.lang.reflect.Field;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
 @RunWith(AndroidJUnit4.class)
 public class JsonAndClassifierFeatureTest {
 
@@ -135,22 +140,35 @@ public class JsonAndClassifierFeatureTest {
     }
 
     @Test
-    public void classifierPageExplainsRoleCardPresetThemeAndMixedPackage() {
+    public void classifierPageContainsAllExpectedCategoriesAndNoDeleteAction() {
         Context context = ApplicationProvider.getApplicationContext();
         Intent intent = new Intent(context, TavernFileClassifierActivity.class);
         intent.putExtra("test_mode", true);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        try (ActivityScenario<TavernFileClassifierActivity> ignored =
+        try (ActivityScenario<TavernFileClassifierActivity> scenario =
                      ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> {
+                try {
+                    Field field = TavernFileClassifierActivity.class
+                            .getDeclaredField("allItems");
+                    field.setAccessible(true);
+                    @SuppressWarnings("unchecked")
+                    List<TavernFileItem> items =
+                            (List<TavernFileItem>) field.get(activity);
+                    Set<TavernFileItem.Category> categories = new HashSet<>();
+                    for (TavernFileItem item : items) categories.add(item.category);
+                    assertTrue(categories.contains(TavernFileItem.Category.CHARACTER_CARD));
+                    assertTrue(categories.contains(TavernFileItem.Category.PRESET));
+                    assertTrue(categories.contains(TavernFileItem.Category.BEAUTY));
+                    assertTrue(categories.contains(TavernFileItem.Category.WORLD_BOOK));
+                    assertTrue(categories.contains(TavernFileItem.Category.REGEX_SCRIPT));
+                    assertTrue(categories.contains(TavernFileItem.Category.IMAGE_ASSET));
+                    assertTrue(categories.contains(TavernFileItem.Category.MIXED_PACKAGE));
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+            });
             onView(withText("角色卡 · PNG 角色卡"))
-                    .check(matches(isDisplayed()));
-            onView(withText("角色卡 · JSON 角色卡"))
-                    .check(matches(isDisplayed()));
-            onView(withText("预设 · 聊天补全 / OpenAI 类预设"))
-                    .check(matches(isDisplayed()));
-            onView(withText("美化 / 主题 · 主题 Theme / 美化配置"))
-                    .check(matches(isDisplayed()));
-            onView(withText("混合包 / 压缩包 · ZIP 压缩包"))
                     .check(matches(isDisplayed()));
             onView(withText("安全移动已选择文件"))
                     .check(matches(isDisplayed()));
