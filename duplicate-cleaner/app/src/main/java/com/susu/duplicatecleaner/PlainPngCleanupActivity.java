@@ -30,17 +30,21 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class PlainPngCleanupActivity extends Activity {
     private static final int REQUEST_SOURCE = 9301;
     private static final int REQUEST_TARGET = 9302;
+    private static final int CATEGORY_PLAIN = 0;
+    private static final int CATEGORY_JSON = 1;
+    private static final int CATEGORY_DAMAGED = 2;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final AtomicBoolean cancelRequested = new AtomicBoolean(false);
     private final List<PlainPngItem> plainItems = new ArrayList<>();
+    private final List<PlainPngItem> jsonItems = new ArrayList<>();
     private final List<PlainPngItem> damagedItems = new ArrayList<>();
     private final List<PlainPngItem> visibleItems = new ArrayList<>();
     private final Set<String> selectedUris = new HashSet<>();
 
     private Uri sourceTreeUri;
     private Uri targetTreeUri;
-    private boolean showingPlain = true;
+    private int category = CATEGORY_PLAIN;
     private boolean busy;
     private boolean testMode;
     private boolean sessionAcquired;
@@ -52,6 +56,7 @@ public class PlainPngCleanupActivity extends Activity {
     private Button sourceButton;
     private Button scanButton;
     private Button plainTab;
+    private Button jsonTab;
     private Button damagedTab;
     private Button selectAllButton;
     private Button clearButton;
@@ -77,7 +82,7 @@ public class PlainPngCleanupActivity extends Activity {
         thumbnailLoader = new ThumbnailLoader(getContentResolver());
         if (testMode) loadTestItems();
         buildUi();
-        showCategory(true);
+        showCategory(CATEGORY_PLAIN);
     }
 
     @Override
@@ -95,13 +100,13 @@ public class PlainPngCleanupActivity extends Activity {
         root.setPadding(dp(12), dp(12), dp(12), dp(12));
 
         TextView title = new TextView(this);
-        title.setText("无角色卡内容 PNG 筛选");
+        title.setText("无角色卡内容 PNG / JSON 筛选");
         title.setTextSize(25);
         title.setTypeface(null, android.graphics.Typeface.BOLD);
         root.addView(title);
 
         TextView description = new TextView(this);
-        description.setText("筛出角色卡目录中的普通 PNG 和疑似损坏文件。普通图片可移动或删除；检测到 chara / ccv3 但无法解析、或 PNG 本身无法完整读取的文件只能移动，不能直接删除。正常角色卡不会出现在这里。 ");
+        description.setText("普通 PNG 可移动或删除；能正常读取但不是角色卡的 JSON 可能是预设、美化或世界书，只允许移动；损坏 PNG / JSON 也只能移动。正常 PNG 与 JSON 角色卡都会被排除。 ");
         description.setTextSize(14);
         description.setPadding(0, dp(7), 0, dp(9));
         root.addView(description);
@@ -112,7 +117,7 @@ public class PlainPngCleanupActivity extends Activity {
         LinearLayout sourceBar = new LinearLayout(this);
         sourceBar.setOrientation(LinearLayout.HORIZONTAL);
         sourceButton = button("重新选择来源文件夹");
-        scanButton = button("开始筛选 PNG");
+        scanButton = button("开始筛选 PNG / JSON");
         sourceButton.setOnClickListener(v -> chooseSource());
         scanButton.setOnClickListener(v -> startScan());
         sourceBar.addView(sourceButton, weighted());
@@ -126,7 +131,8 @@ public class PlainPngCleanupActivity extends Activity {
         root.addView(progressBar, marginTop(6));
 
         statusText = new TextView(this);
-        statusText.setText(testMode ? "测试数据已载入。" : "请选择角色卡文件夹后开始筛选。 ");
+        statusText.setText(testMode ? "测试数据已载入。"
+                : "请选择角色卡文件夹后开始筛选。 ");
         statusText.setTextSize(13);
         statusText.setPadding(0, dp(5), 0, dp(5));
         root.addView(statusText);
@@ -136,11 +142,14 @@ public class PlainPngCleanupActivity extends Activity {
 
         LinearLayout tabs = new LinearLayout(this);
         tabs.setOrientation(LinearLayout.HORIZONTAL);
-        plainTab = button("");
-        damagedTab = button("");
-        plainTab.setOnClickListener(v -> showCategory(true));
-        damagedTab.setOnClickListener(v -> showCategory(false));
+        plainTab = smallButton("");
+        jsonTab = smallButton("");
+        damagedTab = smallButton("");
+        plainTab.setOnClickListener(v -> showCategory(CATEGORY_PLAIN));
+        jsonTab.setOnClickListener(v -> showCategory(CATEGORY_JSON));
+        damagedTab.setOnClickListener(v -> showCategory(CATEGORY_DAMAGED));
         tabs.addView(plainTab, weighted());
+        tabs.addView(jsonTab, weightedMargin());
         tabs.addView(damagedTab, weightedMargin());
         root.addView(tabs, marginTop(7));
 
@@ -188,22 +197,22 @@ public class PlainPngCleanupActivity extends Activity {
     private void chooseSource() {
         if (busy || testMode) return;
         clearAllResults();
-        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
-                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
-                | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
+        Intent intent = treeIntent();
         startActivityForResult(intent, REQUEST_SOURCE);
     }
 
     private void chooseTarget() {
         if (busy || testMode) return;
+        startActivityForResult(treeIntent(), REQUEST_TARGET);
+    }
+
+    private Intent treeIntent() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
                 | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                 | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
                 | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
-        startActivityForResult(intent, REQUEST_TARGET);
+        return intent;
     }
 
     @Override
@@ -233,16 +242,16 @@ public class PlainPngCleanupActivity extends Activity {
         if (busy || testMode || sourceTreeUri == null) return;
         clearAllResults();
         cancelRequested.set(false);
-        setBusy(true, "正在建立 PNG 索引……");
+        setBusy(true, "正在建立 PNG / JSON 索引……");
         Uri source = sourceTreeUri;
         executor.execute(() -> {
-            PngContentInspector inspector = new PngContentInspector(
+            RoleCardAbsenceScanner scanner = new RoleCardAbsenceScanner(
                     getContentResolver(), cancelRequested,
                     message -> runOnUiThread(() -> statusText.setText(message)));
             try {
-                PngContentInspector.ScanResult result = inspector.scan(source);
+                RoleCardAbsenceScanner.ScanResult result = scanner.scan(source);
                 runOnUiThread(() -> showScanResult(result));
-            } catch (PngContentInspector.CancelledException e) {
+            } catch (RoleCardAbsenceScanner.CancelledException e) {
                 runOnUiThread(() -> {
                     finishBusy("筛选已取消，请重新扫描后再操作。");
                     clearAllResults();
@@ -256,26 +265,32 @@ public class PlainPngCleanupActivity extends Activity {
         });
     }
 
-    private void showScanResult(PngContentInspector.ScanResult result) {
+    private void showScanResult(RoleCardAbsenceScanner.ScanResult result) {
         plainItems.clear();
-        plainItems.addAll(result.plain);
+        plainItems.addAll(result.plainImages);
+        jsonItems.clear();
+        jsonItems.addAll(result.nonCardJson);
         damagedItems.clear();
         damagedItems.addAll(result.damaged);
         finishBusy("筛选完成。");
         summaryText.setText(String.format(Locale.CHINA,
-                "扫描 PNG：%d 张　｜　正常角色卡：%d 张（已排除）\n"
-                        + "普通图片：%d 张，可移动或删除\n"
-                        + "疑似损坏 / 无法读取：%d 张，只能移动\n耗时：%.1f 秒",
-                result.totalPng, result.validCards, result.plainImages,
-                result.damagedFiles, result.elapsedMs / 1000.0));
-        showCategory(true);
+                "扫描 PNG / JSON：%d 个　｜　正常角色卡：%d 个（已排除）\n"
+                        + "普通 PNG：%d 个，可移动或删除\n"
+                        + "非角色卡 JSON：%d 个，只能移动\n"
+                        + "损坏 / 无法读取：%d 个，只能移动\n耗时：%.1f 秒",
+                result.totalFiles, result.validCards, result.plainImages.size(),
+                result.nonCardJson.size(), result.damaged.size(),
+                result.elapsedMs / 1000.0));
+        showCategory(CATEGORY_PLAIN);
     }
 
-    private void showCategory(boolean plain) {
-        showingPlain = plain;
+    private void showCategory(int targetCategory) {
+        category = targetCategory;
         selectedUris.clear();
         visibleItems.clear();
-        visibleItems.addAll(plain ? plainItems : damagedItems);
+        if (category == CATEGORY_PLAIN) visibleItems.addAll(plainItems);
+        else if (category == CATEGORY_JSON) visibleItems.addAll(jsonItems);
+        else visibleItems.addAll(damagedItems);
         if (adapter != null) adapter.notifyDataSetChanged();
         updateSummary();
         refreshButtons();
@@ -315,13 +330,14 @@ public class PlainPngCleanupActivity extends Activity {
         List<PlainPngItem> selected = selectedItems();
         if (busy || testMode || selected.isEmpty()) return;
         if (targetTreeUri == null) {
-            Toast.makeText(this, "请先选择移动目标文件夹", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "请先选择移动目标文件夹",
+                    Toast.LENGTH_LONG).show();
             return;
         }
-        String category = showingPlain ? "普通图片" : "疑似损坏文件";
         new AlertDialog.Builder(this)
-                .setTitle("确认移动" + category)
-                .setMessage("即将移动 " + selected.size() + " 个文件。会先复制到目标文件夹，计算 SHA-256 确认目标与源文件完全一致后，才删除原文件。 ")
+                .setTitle("确认安全移动")
+                .setMessage("即将移动 " + selected.size()
+                        + " 个文件。会保留 PNG / JSON 原格式，并执行复制、SHA-256 校验、大小校验，完全一致后才删除源文件。 ")
                 .setNegativeButton("取消", null)
                 .setPositiveButton("确认移动", (dialog, which) -> startMove(selected))
                 .show();
@@ -342,7 +358,7 @@ public class PlainPngCleanupActivity extends Activity {
                 runOnUiThread(() -> showMoveResult(result));
             } catch (CardMoveManager.CancelledException e) {
                 runOnUiThread(() -> finishBusy(
-                        "移动已取消。已完成的文件保持移动，未完成文件仍留在原处。 "));
+                        "移动已取消。已完成文件保持移动，未完成文件仍在原处。 "));
             } catch (Exception e) {
                 runOnUiThread(() -> finishBusy("移动失败：" + safeMessage(e)));
             }
@@ -363,25 +379,26 @@ public class PlainPngCleanupActivity extends Activity {
 
     private void confirmDelete() {
         List<PlainPngItem> selected = selectedItems();
-        if (busy || testMode || !showingPlain || selected.isEmpty()) return;
+        if (busy || testMode || category != CATEGORY_PLAIN || selected.isEmpty()) return;
         new AlertDialog.Builder(this)
-                .setTitle("确认永久删除普通图片")
+                .setTitle("确认永久删除普通 PNG")
                 .setMessage("即将永久删除 " + selected.size()
-                        + " 张普通 PNG。删除前会再次检查每个文件仍然没有 chara / ccv3；只要检测结果改变，就会安全跳过。疑似损坏角色卡永远不会进入这个删除流程。 ")
+                        + " 张普通 PNG。删除前会再次确认每个文件仍然没有 chara / ccv3。JSON 和疑似损坏文件不会进入删除流程。 ")
                 .setNegativeButton("取消", null)
                 .setPositiveButton("继续确认", (dialog, which) ->
                         new AlertDialog.Builder(this)
                                 .setTitle("最后确认")
-                                .setMessage("删除不可撤销。确定永久删除所选普通图片吗？")
+                                .setMessage("删除不可撤销。确定永久删除所选普通 PNG 吗？")
                                 .setNegativeButton("取消", null)
-                                .setPositiveButton("永久删除", (d, w) -> startDelete(selected))
+                                .setPositiveButton("永久删除",
+                                        (d, w) -> startDelete(selected))
                                 .show())
                 .show();
     }
 
     private void startDelete(List<PlainPngItem> selected) {
         cancelRequested.set(false);
-        setBusy(true, "正在重新确认普通图片身份……");
+        setBusy(true, "正在重新确认普通 PNG 身份……");
         executor.execute(() -> {
             PlainPngDeleteManager manager = new PlainPngDeleteManager(
                     getContentResolver(), cancelRequested,
@@ -404,7 +421,7 @@ public class PlainPngCleanupActivity extends Activity {
                 + result.skipped + "，失败 " + result.failed);
         removeCompleted(result.deletedUris);
         new AlertDialog.Builder(this)
-                .setTitle("普通图片删除结果")
+                .setTitle("普通 PNG 删除结果")
                 .setMessage("成功 " + result.deleted + "，安全跳过 "
                         + result.skipped + "，失败 " + result.failed
                         + "\n\n" + result.log)
@@ -416,12 +433,15 @@ public class PlainPngCleanupActivity extends Activity {
         if (uris == null || uris.isEmpty()) return;
         Set<String> removed = new HashSet<>(uris);
         plainItems.removeIf(item -> removed.contains(item.uri));
+        jsonItems.removeIf(item -> removed.contains(item.uri));
         damagedItems.removeIf(item -> removed.contains(item.uri));
         selectedUris.removeAll(removed);
-        showCategory(showingPlain);
+        showCategory(category);
     }
 
     private void openFullScreen(PlainPngItem item) {
+        if (item.fileName == null
+                || !item.fileName.toLowerCase(Locale.ROOT).endsWith(".png")) return;
         Intent intent = new Intent(this, FullScreenImageActivity.class);
         intent.putExtra("image_uri", item.uri);
         startActivity(intent);
@@ -429,6 +449,7 @@ public class PlainPngCleanupActivity extends Activity {
 
     private void clearAllResults() {
         plainItems.clear();
+        jsonItems.clear();
         damagedItems.clear();
         visibleItems.clear();
         selectedUris.clear();
@@ -439,18 +460,23 @@ public class PlainPngCleanupActivity extends Activity {
 
     private void loadTestItems() {
         for (int i = 1; i <= 120; i++) {
-            PlainPngItem item = testItem("plain-" + i,
+            plainItems.add(testItem("plain-" + i,
                     "普通图片/旧照片" + i + ".png",
                     PlainPngItem.Type.PLAIN_IMAGE,
-                    "PNG 内没有 chara / ccv3，属于普通图片，不是可导入角色卡");
-            plainItems.add(item);
+                    "PNG 内没有 chara / ccv3，属于普通图片"));
+        }
+        for (int i = 1; i <= 30; i++) {
+            jsonItems.add(testItem("json-" + i,
+                    "其他JSON/预设或美化" + i + ".json",
+                    PlainPngItem.Type.NON_CARD_JSON,
+                    "JSON 可读取，但不是角色卡，只允许移动"));
         }
         for (int i = 1; i <= 40; i++) {
             PlainPngItem item = testItem("damaged-" + i,
-                    "待修复/损坏角色卡" + i + ".png",
+                    "待修复/损坏角色卡" + i + (i % 2 == 0 ? ".json" : ".png"),
                     PlainPngItem.Type.DAMAGED_OR_UNREADABLE,
-                    "检测到 chara，但 Base64 或 JSON 内容无法解析");
-            item.markerSummary = "检测到：chara";
+                    "角色卡标记或 JSON 存在，但内容无法解析");
+            item.markerSummary = "疑似损坏，只允许移动";
             damagedItems.add(item);
         }
     }
@@ -460,28 +486,33 @@ public class PlainPngCleanupActivity extends Activity {
         PlainPngItem item = new PlainPngItem();
         item.key = id;
         item.treeUri = "content://plain-png-test/tree";
-        item.uri = "content://plain-png-test/" + id + ".png";
+        item.uri = "content://plain-png-test/" + id;
         item.parentDocumentId = "parent";
         item.path = path;
         item.fileName = path.substring(path.lastIndexOf('/') + 1);
         item.size = 1024L * (100 + id.length());
         item.modified = 1000L;
-        item.width = 512;
-        item.height = 768;
+        item.width = item.fileName.endsWith(".png") ? 512 : 0;
+        item.height = item.fileName.endsWith(".png") ? 768 : 0;
         item.type = type;
         item.reason = reason;
         item.markerSummary = type == PlainPngItem.Type.PLAIN_IMAGE
-                ? "没有角色卡数据块" : "检测到角色卡标记";
+                ? "没有角色卡数据块"
+                : type == PlainPngItem.Type.NON_CARD_JSON
+                ? "非角色卡 JSON" : "检测到异常";
         return item;
     }
 
     private void updateSummary() {
         if (plainTab == null) return;
         plainTab.setText("普通图片（" + plainItems.size() + "）");
+        jsonTab.setText("非角色JSON（" + jsonItems.size() + "）");
         damagedTab.setText("疑似损坏（" + damagedItems.size() + "）");
-        String rule = showingPlain
-                ? "当前：普通图片，可移动或删除"
-                : "当前：疑似损坏 / 无法读取，只能移动到待修复文件夹";
+        String rule = category == CATEGORY_PLAIN
+                ? "当前：普通 PNG，可移动或删除"
+                : category == CATEGORY_JSON
+                ? "当前：非角色卡 JSON，可能是预设/美化/世界书，只能移动"
+                : "当前：疑似损坏 PNG / JSON，只能移动到待修复文件夹";
         summaryText.setText(rule + "\n当前列表 " + visibleItems.size()
                 + " 个，已选择 " + selectedUris.size() + " 个。 ");
     }
@@ -505,21 +536,25 @@ public class PlainPngCleanupActivity extends Activity {
         sourceButton.setEnabled(!busy && !testMode);
         scanButton.setEnabled(!busy && !testMode && sourceTreeUri != null);
         plainTab.setEnabled(!busy);
+        jsonTab.setEnabled(!busy);
         damagedTab.setEnabled(!busy);
         selectAllButton.setEnabled(!busy && !visibleItems.isEmpty());
         clearButton.setEnabled(!busy && !selectedUris.isEmpty());
         targetButton.setEnabled(!busy && !testMode);
         moveButton.setEnabled(!busy && !testMode && targetTreeUri != null
                 && !selectedUris.isEmpty());
-        deleteButton.setVisibility(showingPlain ? View.VISIBLE : View.GONE);
-        deleteButton.setEnabled(!busy && !testMode && showingPlain
-                && !selectedUris.isEmpty());
+        deleteButton.setVisibility(category == CATEGORY_PLAIN
+                ? View.VISIBLE : View.GONE);
+        deleteButton.setEnabled(!busy && !testMode
+                && category == CATEGORY_PLAIN && !selectedUris.isEmpty());
         cancelButton.setEnabled(busy);
     }
 
     private final class CleanupAdapter extends BaseAdapter {
         @Override public int getCount() { return visibleItems.size(); }
-        @Override public PlainPngItem getItem(int position) { return visibleItems.get(position); }
+        @Override public PlainPngItem getItem(int position) {
+            return visibleItems.get(position);
+        }
         @Override public long getItemId(int position) { return position; }
 
         @Override
@@ -572,10 +607,17 @@ public class PlainPngCleanupActivity extends Activity {
             holder.details.setText(item.path + "\n大小：" + formatBytes(item.size)
                     + "　尺寸：" + dimension(item)
                     + "\n" + item.markerSummary + "\n原因：" + item.reason);
+            boolean png = item.fileName != null
+                    && item.fileName.toLowerCase(Locale.ROOT).endsWith(".png");
+            holder.fullScreen.setVisibility(png ? View.VISIBLE : View.GONE);
             holder.fullScreen.setOnClickListener(v -> openFullScreen(item));
-            holder.image.setOnClickListener(v -> openFullScreen(item));
-            if (!testMode) thumbnailLoader.load(holder.image, item.contentUri(), dp(180));
-            else holder.image.setImageDrawable(null);
+            holder.image.setOnClickListener(png ? v -> openFullScreen(item) : null);
+            if (!testMode && png) {
+                thumbnailLoader.load(holder.image, item.contentUri(), dp(180));
+            } else {
+                holder.image.setImageDrawable(null);
+                holder.image.setBackgroundColor(0xffe5e5e5);
+            }
             return convertView;
         }
     }
@@ -615,6 +657,13 @@ public class PlainPngCleanupActivity extends Activity {
         return button;
     }
 
+    private Button smallButton(String text) {
+        Button button = button(text);
+        button.setTextSize(11);
+        button.setPadding(dp(2), 0, dp(2), 0);
+        return button;
+    }
+
     private LinearLayout.LayoutParams matchWrap() {
         return new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -634,7 +683,7 @@ public class PlainPngCleanupActivity extends Activity {
 
     private LinearLayout.LayoutParams weightedMargin() {
         LinearLayout.LayoutParams params = weighted();
-        params.leftMargin = dp(6);
+        params.leftMargin = dp(4);
         return params;
     }
 
@@ -644,7 +693,7 @@ public class PlainPngCleanupActivity extends Activity {
 
     private static String dimension(PlainPngItem item) {
         return item.width > 0 && item.height > 0
-                ? item.width + "×" + item.height : "未知";
+                ? item.width + "×" + item.height : "非图片 / 未知";
     }
 
     private static String formatBytes(long bytes) {
