@@ -4,13 +4,14 @@ import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 final class SemanticDuplicateSession {
-    private static final Map<String, SemanticCardScanner.Group> GROUPS = new LinkedHashMap<>();
+    private static final Map<String, SemanticCardScanner.Group> GROUPS =
+            new LinkedHashMap<>();
     private static final Map<String, Integer> KEEPER_INDEX = new HashMap<>();
     private static final Map<String, JSONObject> TEST_PAYLOADS = new HashMap<>();
     private static List<SemanticCardScanner.Failure> failures = new ArrayList<>();
@@ -109,10 +110,17 @@ final class SemanticDuplicateSession {
 
     static String recommendationReason(SemanticCardParser.CardRecord card) {
         if (card == null) return "";
-        if (card.payloadConflict) return "内部 chara / ccv3 内容冲突，不建议自动保留";
-        if (card.hasChara && card.hasCcv3) return "兼容性优先：同时包含 chara 和 ccv3";
-        if (card.hasCcv3) return "包含 ccv3，新版格式兼容性较好";
-        if (card.hasChara) return "包含传统 chara，兼容常见导入方式";
+        if (card.payloadConflict) {
+            return "内部角色卡内容冲突，不建议自动保留";
+        }
+        if (isJson(card)) {
+            return "JSON 角色卡：没有封面重复编码，内容结构可直接读取；与 PNG 内容相同时可按你的兼容偏好选择。";
+        }
+        if (card.hasChara && card.hasCcv3) {
+            return "兼容性优先：PNG 同时包含 chara 和 ccv3";
+        }
+        if (card.hasCcv3) return "PNG 包含 ccv3，新版格式兼容性较好";
+        if (card.hasChara) return "PNG 包含传统 chara，兼容常见导入方式";
         return "未识别到标准角色卡数据块";
     }
 
@@ -125,9 +133,10 @@ final class SemanticDuplicateSession {
             SemanticCardParser.CardRecord card = group.cards.get(i);
             int score = 0;
             if (!card.payloadConflict) score += 100;
+            if (isJson(card)) score += 30;
             if (card.hasCcv3) score += 40;
             if (card.hasChara) score += 25;
-            if (card.hasChara && card.hasCcv3) score += 15;
+            if (card.hasChara && card.hasCcv3 && !isJson(card)) score += 15;
             if (card.specVersion != null && !card.specVersion.isEmpty()) score += 5;
             long size = card.size < 0 ? Long.MAX_VALUE : card.size;
             if (score > bestScore || (score == bestScore && size < bestSize)) {
@@ -137,5 +146,10 @@ final class SemanticDuplicateSession {
             }
         }
         return bestIndex;
+    }
+
+    private static boolean isJson(SemanticCardParser.CardRecord card) {
+        return card.fileName != null
+                && card.fileName.toLowerCase(Locale.ROOT).endsWith(".json");
     }
 }
