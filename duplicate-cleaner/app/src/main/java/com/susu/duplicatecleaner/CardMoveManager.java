@@ -52,7 +52,8 @@ final class CardMoveManager {
     private final AtomicBoolean cancelled;
     private final ProgressListener listener;
 
-    CardMoveManager(ContentResolver resolver, AtomicBoolean cancelled, ProgressListener listener) {
+    CardMoveManager(ContentResolver resolver, AtomicBoolean cancelled,
+                    ProgressListener listener) {
         this.resolver = resolver;
         this.cancelled = cancelled;
         this.listener = listener;
@@ -61,35 +62,41 @@ final class CardMoveManager {
     MoveResult moveFavorites(List<CharacterCard> cards, Uri targetTreeUri) throws Exception {
         MoveResult result = new MoveResult();
         String targetRootId = DocumentsContract.getTreeDocumentId(targetTreeUri);
-        Uri targetRootUri = DocumentsContract.buildDocumentUriUsingTree(targetTreeUri, targetRootId);
+        Uri targetRootUri = DocumentsContract.buildDocumentUriUsingTree(
+                targetTreeUri, targetRootId);
         Set<String> usedNames = listExistingNames(targetTreeUri, targetRootId);
 
         for (int i = 0; i < cards.size(); i++) {
             checkCancelled();
             CharacterCard card = cards.get(i);
-            progress("正在移动收藏：" + (i + 1) + " / " + cards.size());
+            progress("正在移动文件：" + (i + 1) + " / " + cards.size());
 
             Uri sourceUri = Uri.parse(card.uri);
             if (sameFolder(card, targetTreeUri, targetRootId)) {
                 result.skipped++;
-                result.log.append("跳过（文件已在目标文件夹）：").append(card.path).append('\n');
+                result.log.append("跳过（文件已在目标文件夹）：")
+                        .append(card.path).append('\n');
                 continue;
             }
 
             Metadata current = queryMetadata(sourceUri);
             if (current == null) {
                 result.skipped++;
-                result.log.append("跳过（源文件已不存在或不可读取）：").append(card.path).append('\n');
+                result.log.append("跳过（源文件已不存在或不可读取）：")
+                        .append(card.path).append('\n');
                 continue;
             }
             if (card.size >= 0 && current.size >= 0 && card.size != current.size) {
                 result.skipped++;
-                result.log.append("跳过（收藏后文件大小发生变化）：").append(card.path).append('\n');
+                result.log.append("跳过（选择后文件大小发生变化）：")
+                        .append(card.path).append('\n');
                 continue;
             }
-            if (card.modified > 0 && current.modified > 0 && card.modified != current.modified) {
+            if (card.modified > 0 && current.modified > 0
+                    && card.modified != current.modified) {
                 result.skipped++;
-                result.log.append("跳过（收藏后文件发生变化）：").append(card.path).append('\n');
+                result.log.append("跳过（选择后文件发生变化）：")
+                        .append(card.path).append('\n');
                 continue;
             }
 
@@ -97,8 +104,10 @@ final class CardMoveManager {
             Uri targetUri = null;
             try {
                 targetUri = DocumentsContract.createDocument(
-                        resolver, targetRootUri, "image/png", targetName);
-                if (targetUri == null) throw new IllegalStateException("系统无法创建目标文件");
+                        resolver, targetRootUri, mimeForName(targetName), targetName);
+                if (targetUri == null) {
+                    throw new IllegalStateException("系统无法创建目标文件");
+                }
 
                 String sourceHash = copyAndHash(sourceUri, targetUri);
                 String targetHash = hash(targetUri);
@@ -150,7 +159,9 @@ final class CardMoveManager {
         byte[] buffer = new byte[1024 * 1024];
         try (InputStream rawIn = resolver.openInputStream(source);
              OutputStream rawOut = resolver.openOutputStream(target, "w")) {
-            if (rawIn == null || rawOut == null) throw new IllegalStateException("无法打开源文件或目标文件");
+            if (rawIn == null || rawOut == null) {
+                throw new IllegalStateException("无法打开源文件或目标文件");
+            }
             try (BufferedInputStream input = new BufferedInputStream(rawIn, buffer.length);
                  BufferedOutputStream output = new BufferedOutputStream(rawOut, buffer.length)) {
                 int read;
@@ -203,7 +214,7 @@ final class CardMoveManager {
         };
         try (Cursor cursor = resolver.query(uri, projection, null, null, null)) {
             if (cursor == null || !cursor.moveToFirst()) return null;
-            String name = cursor.isNull(0) ? "未命名.png" : cursor.getString(0);
+            String name = cursor.isNull(0) ? "未命名" : cursor.getString(0);
             long size = cursor.isNull(1) ? -1L : cursor.getLong(1);
             long modified = cursor.isNull(2) ? 0L : cursor.getLong(2);
             return new Metadata(name, size, modified);
@@ -212,7 +223,8 @@ final class CardMoveManager {
         }
     }
 
-    private boolean sameFolder(CharacterCard card, Uri targetTreeUri, String targetRootId) {
+    private boolean sameFolder(CharacterCard card, Uri targetTreeUri,
+                               String targetRootId) {
         try {
             Uri sourceTree = Uri.parse(card.treeUri);
             return sourceTree.getAuthority() != null
@@ -240,6 +252,20 @@ final class CardMoveManager {
         return candidate;
     }
 
+    static String mimeForName(String fileName) {
+        String lower = fileName == null ? "" : fileName.toLowerCase(Locale.ROOT);
+        if (lower.endsWith(".png")) return "image/png";
+        if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+        if (lower.endsWith(".webp")) return "image/webp";
+        if (lower.endsWith(".gif")) return "image/gif";
+        if (lower.endsWith(".json")) return "application/json";
+        if (lower.endsWith(".css")) return "text/css";
+        if (lower.endsWith(".html") || lower.endsWith(".htm")) return "text/html";
+        if (lower.endsWith(".zip")) return "application/zip";
+        if (lower.endsWith(".txt") || lower.endsWith(".md")) return "text/plain";
+        return "application/octet-stream";
+    }
+
     private boolean safeDelete(Uri uri) {
         try {
             return DocumentsContract.deleteDocument(resolver, uri);
@@ -249,7 +275,9 @@ final class CardMoveManager {
     }
 
     private void checkCancelled() throws CancelledException {
-        if (cancelled.get() || Thread.currentThread().isInterrupted()) throw new CancelledException();
+        if (cancelled.get() || Thread.currentThread().isInterrupted()) {
+            throw new CancelledException();
+        }
     }
 
     private void progress(String message) {
@@ -258,7 +286,9 @@ final class CardMoveManager {
 
     private static String toHex(byte[] data) {
         StringBuilder builder = new StringBuilder(data.length * 2);
-        for (byte value : data) builder.append(String.format(Locale.ROOT, "%02x", value & 0xff));
+        for (byte value : data) {
+            builder.append(String.format(Locale.ROOT, "%02x", value & 0xff));
+        }
         return builder.toString();
     }
 
