@@ -50,7 +50,8 @@ public class SemanticPairDiffActivity extends Activity {
         if (group == null || leftIndex < 0 || rightIndex < 0
                 || leftIndex >= group.cards.size() || rightIndex >= group.cards.size()
                 || leftIndex == rightIndex) {
-            Toast.makeText(this, "比较内容已失效，请返回重新选择。", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "比较内容已失效，请返回重新选择。",
+                    Toast.LENGTH_LONG).show();
             finish();
             return;
         }
@@ -93,30 +94,32 @@ public class SemanticPairDiffActivity extends Activity {
         cards.addView(cardColumn("右侧 / 对比文件", rightRecord), weightedMargin());
         root.addView(cards, matchWrap());
 
-        progressBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        progressBar = new ProgressBar(this, null,
+                android.R.attr.progressBarStyleHorizontal);
         progressBar.setIndeterminate(true);
         root.addView(progressBar, marginTop(10));
 
         statusText = new TextView(this);
-        statusText.setText("正在重新读取两张角色卡，并逐项分析差异……");
+        statusText.setText("正在重新读取两张 PNG / JSON 角色卡，并逐项分析差异……");
         statusText.setTextSize(13);
         statusText.setPadding(0, dp(5), 0, dp(5));
         root.addView(statusText);
 
         verdictText = section(root, "最终结论");
-        coverText = section(root, "封面逐像素比较");
+        coverText = section(root, "封面比较");
         personaText = section(root, "人设差异");
         greetingsText = section(root, "开场白差异");
         worldbookText = section(root, "世界书差异");
         regexText = section(root, "正则脚本差异");
         extensionsText = section(root, "扩展功能差异");
         otherText = section(root, "其他有效字段差异");
-        packagingText = section(root, "PNG 封装、兼容性与文件差异");
+        packagingText = section(root, "文件格式、兼容性与封装差异");
 
         setContentView(scroll);
     }
 
-    private LinearLayout cardColumn(String label, SemanticCardParser.CardRecord record) {
+    private LinearLayout cardColumn(String label,
+                                    SemanticCardParser.CardRecord record) {
         LinearLayout column = new LinearLayout(this);
         column.setOrientation(LinearLayout.VERTICAL);
         column.setPadding(dp(7), dp(7), dp(7), dp(7));
@@ -129,16 +132,30 @@ public class SemanticPairDiffActivity extends Activity {
         heading.setGravity(Gravity.CENTER);
         column.addView(heading);
 
-        ImageView image = new ImageView(this);
-        image.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        column.addView(image, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(230)));
-        if (!testMode) thumbnailLoader.load(image, record.contentUri(), dp(420));
+        if (!UniversalSemanticCardParser.isJson(record)) {
+            ImageView image = new ImageView(this);
+            image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            column.addView(image, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(230)));
+            if (!testMode) {
+                thumbnailLoader.load(image, record.contentUri(), dp(420));
+            }
+        } else {
+            TextView json = new TextView(this);
+            json.setText("JSON 角色卡\n无内嵌封面");
+            json.setGravity(Gravity.CENTER);
+            json.setTextSize(16);
+            json.setBackgroundColor(0xffe8e8e8);
+            column.addView(json, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(230)));
+        }
 
         TextView info = new TextView(this);
+        String dimension = UniversalSemanticCardParser.isJson(record)
+                ? "JSON 文件" : record.width + "×" + record.height;
         info.setText(record.fileName + "\n" + formatBytes(record.size)
-                + " · " + record.width + "×" + record.height
-                + "\n" + record.compatibilityText()
+                + " · " + dimension
+                + "\n" + compatibilityLabel(record)
                 + "\n" + record.componentSummary()
                 + "\n路径：" + record.path);
         info.setTextSize(12);
@@ -170,11 +187,9 @@ public class SemanticPairDiffActivity extends Activity {
             try {
                 SemanticCardParser.ParsedPayload left = parseRecord(leftRecord);
                 SemanticCardParser.ParsedPayload right = parseRecord(rightRecord);
-                SemanticDiffEngine.DiffReport report = SemanticDiffEngine.compare(left, right);
-                SemanticCardParser.CoverComparison cover = testMode
-                        ? new SemanticCardParser.CoverComparison("测试模式未读取真实封面", false)
-                        : SemanticCardParser.compareCoverPixels(getContentResolver(),
-                        leftRecord.contentUri(), rightRecord.contentUri());
+                SemanticDiffEngine.DiffReport report =
+                        SemanticDiffEngine.compare(left, right);
+                SemanticCardParser.CoverComparison cover = compareCover();
                 runOnUiThread(() -> showReport(report, cover));
             } catch (Exception e) {
                 runOnUiThread(() -> {
@@ -185,13 +200,33 @@ public class SemanticPairDiffActivity extends Activity {
         });
     }
 
+    private SemanticCardParser.CoverComparison compareCover() {
+        if (testMode) {
+            return new SemanticCardParser.CoverComparison(
+                    "测试模式未读取真实封面", false);
+        }
+        boolean leftJson = UniversalSemanticCardParser.isJson(leftRecord);
+        boolean rightJson = UniversalSemanticCardParser.isJson(rightRecord);
+        if (leftJson && rightJson) {
+            return new SemanticCardParser.CoverComparison(
+                    "两边都是 JSON 角色卡，均没有内嵌封面。", true);
+        }
+        if (leftJson || rightJson) {
+            return new SemanticCardParser.CoverComparison(
+                    "一边是 PNG 角色卡、一边是 JSON 角色卡；JSON 本身没有内嵌封面，因此不做像素比较。",
+                    false);
+        }
+        return SemanticCardParser.compareCoverPixels(getContentResolver(),
+                leftRecord.contentUri(), rightRecord.contentUri());
+    }
+
     private SemanticCardParser.ParsedPayload parseRecord(
             SemanticCardParser.CardRecord record) throws Exception {
         JSONObject testPayload = SemanticDuplicateSession.testPayload(record.uri);
         if (testPayload != null) {
             return SemanticCardParser.fromJsonForTest(record, testPayload);
         }
-        return SemanticCardParser.parse(getContentResolver(), record);
+        return UniversalSemanticCardParser.parse(getContentResolver(), record);
     }
 
     private void showReport(SemanticDiffEngine.DiffReport report,
@@ -207,6 +242,15 @@ public class SemanticPairDiffActivity extends Activity {
         extensionsText.setText(report.extensions);
         otherText.setText(report.other);
         packagingText.setText(report.packaging);
+    }
+
+    private static String compatibilityLabel(SemanticCardParser.CardRecord record) {
+        if (UniversalSemanticCardParser.isJson(record)) {
+            String version = record.specVersion == null || record.specVersion.isEmpty()
+                    ? "" : " · v" + record.specVersion;
+            return "JSON 角色卡" + version;
+        }
+        return record.compatibilityText();
     }
 
     private Button button(String text) {
