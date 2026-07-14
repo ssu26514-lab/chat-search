@@ -60,4 +60,4 @@ jobs:
             --title "CardTools v1.8.0" \
             --notes "Tested Android APK. Includes PNG and JSON character-card support plus SillyTavern file classification."
 
-# trigger: release-publication-2
+# trigger: release-publication-3
