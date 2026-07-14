@@ -42,6 +42,11 @@
             android:screenOrientation="unspecified" />
 
         <activity
+            android:name=".PlainPngCleanupActivity"
+            android:exported="false"
+            android:screenOrientation="unspecified" />
+
+        <activity
             android:name=".GuardedCardRenamerActivity"
             android:exported="false"
             android:screenOrientation="unspecified" />
