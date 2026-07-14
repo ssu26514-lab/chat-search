@@ -1,10 +1,11 @@
 name: Publish CardTools v1.8.0 Direct Download
 
 on:
-  push:
+  pull_request:
     branches:
       - main
     paths:
+      - 'duplicate-cleaner/**'
       - '.github/workflows/publish-cardtools-v180.yml'
 
 permissions:
