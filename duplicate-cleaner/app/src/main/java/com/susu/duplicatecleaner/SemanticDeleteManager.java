@@ -51,7 +51,7 @@ final class SemanticDeleteManager {
         checkCancelled();
         progress("正在重新解析保留文件……");
         SemanticCardParser.ParsedPayload currentKeeper =
-                SemanticCardParser.parse(resolver, keeper);
+                UniversalSemanticCardParser.parse(resolver, keeper);
         if (!keeper.functionalHash.equals(currentKeeper.record.functionalHash)
                 || currentKeeper.record.payloadConflict) {
             throw new IllegalStateException("保留文件在扫描后发生变化，已停止删除");
@@ -63,10 +63,11 @@ final class SemanticDeleteManager {
             if (card.uri.equals(keeper.uri)) continue;
             checkCancelled();
             index++;
-            progress("正在重新验证并删除：" + index + " / " + total + "\n" + card.path);
+            progress("正在重新验证并删除：" + index + " / " + total
+                    + "\n" + card.path);
             try {
                 SemanticCardParser.ParsedPayload current =
-                        SemanticCardParser.parse(resolver, card);
+                        UniversalSemanticCardParser.parse(resolver, card);
                 if (!card.functionalHash.equals(current.record.functionalHash)) {
                     result.skipped++;
                     result.log.append("安全跳过（文件在扫描后发生变化）：")
@@ -75,11 +76,12 @@ final class SemanticDeleteManager {
                 }
                 if (current.record.payloadConflict) {
                     result.skipped++;
-                    result.log.append("安全跳过（内部 chara / ccv3 内容冲突）：")
+                    result.log.append("安全跳过（内部角色卡数据冲突）：")
                             .append(card.path).append('\n');
                     continue;
                 }
-                if (!currentKeeper.record.functionalHash.equals(current.record.functionalHash)) {
+                if (!currentKeeper.record.functionalHash
+                        .equals(current.record.functionalHash)) {
                     result.skipped++;
                     result.log.append("安全跳过（有效内容不再与保留文件一致）：")
                             .append(card.path).append('\n');
