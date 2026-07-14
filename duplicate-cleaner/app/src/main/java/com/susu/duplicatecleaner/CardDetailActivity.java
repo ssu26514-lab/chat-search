@@ -37,7 +37,8 @@ public class CardDetailActivity extends Activity {
         String key = getIntent().getStringExtra("card_key");
         card = CardSession.get(key);
         if (card == null) {
-            Toast.makeText(this, "卡片内容已失效，请重新扫描或从收藏夹打开。", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "卡片内容已失效，请重新扫描或从收藏夹打开。",
+                    Toast.LENGTH_LONG).show();
             finish();
             return;
         }
@@ -55,9 +56,10 @@ public class CardDetailActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == REQUEST_GREETING_FULLSCREEN && resultCode == RESULT_OK && data != null) {
-            showGreeting(data.getIntExtra(GreetingFullScreenActivity.EXTRA_GREETING_INDEX,
-                    greetingIndex));
+        if (requestCode == REQUEST_GREETING_FULLSCREEN
+                && resultCode == RESULT_OK && data != null) {
+            showGreeting(data.getIntExtra(
+                    GreetingFullScreenActivity.EXTRA_GREETING_INDEX, greetingIndex));
         }
     }
 
@@ -86,12 +88,89 @@ public class CardDetailActivity extends Activity {
         root.addView(title);
 
         TextView file = new TextView(this);
-        file.setText(card.path);
+        file.setText(card.formatLabel() + " 角色卡\n" + card.path);
         file.setTextSize(12);
         file.setTextIsSelectable(true);
         file.setPadding(0, dp(4), 0, dp(10));
         root.addView(file);
 
+        if (card.hasCoverImage()) buildPngHeader(root);
+        else buildJsonHeader(root);
+        updateFavoriteButton();
+
+        LinearLayout personaHeader = new LinearLayout(this);
+        personaHeader.setOrientation(LinearLayout.HORIZONTAL);
+        personaHeader.setGravity(Gravity.CENTER_VERTICAL);
+        TextView personaTitle = sectionTitle("CHAR 人设");
+        personaHeader.addView(personaTitle, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        Button fullPersona = button("全屏查看人设");
+        fullPersona.setOnClickListener(v -> openFullText("CHAR 人设", card.persona));
+        personaHeader.addView(fullPersona,
+                new LinearLayout.LayoutParams(dp(142), dp(52)));
+        root.addView(personaHeader, marginTop(16));
+
+        TextView persona = contentBox(card.persona);
+        persona.setMaxLines(12);
+        persona.setOnClickListener(v -> openFullText("CHAR 人设", card.persona));
+        root.addView(persona, marginTop(6));
+
+        LinearLayout greetingHeader = new LinearLayout(this);
+        greetingHeader.setOrientation(LinearLayout.HORIZONTAL);
+        greetingHeader.setGravity(Gravity.CENTER_VERTICAL);
+        greetingTitle = sectionTitle("");
+        greetingHeader.addView(greetingTitle, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        Button fullGreeting = button("全屏查看开场白");
+        fullGreeting.setOnClickListener(v -> openCurrentGreetingFullScreen());
+        greetingHeader.addView(fullGreeting,
+                new LinearLayout.LayoutParams(dp(154), dp(52)));
+        root.addView(greetingHeader, marginTop(18));
+
+        root.addView(greetingNavigation("上方"), marginTop(6));
+
+        greetingText = contentBox("");
+        greetingText.setMinHeight(dp(240));
+        gestureDetector = new GestureDetector(this,
+                new GestureDetector.SimpleOnGestureListener() {
+                    @Override
+                    public boolean onDown(MotionEvent e) {
+                        return true;
+                    }
+
+                    @Override
+                    public boolean onFling(MotionEvent e1, MotionEvent e2,
+                                           float velocityX, float velocityY) {
+                        if (e1 == null || e2 == null) return false;
+                        float distance = e2.getX() - e1.getX();
+                        float vertical = e2.getY() - e1.getY();
+                        if (Math.abs(distance) < dp(60)
+                                || Math.abs(distance) <= Math.abs(vertical)
+                                || Math.abs(velocityX) < 300) return false;
+                        if (distance < 0) nextGreeting();
+                        else previousGreeting();
+                        return true;
+                    }
+                });
+        greetingText.setOnTouchListener((v, event) -> {
+            gestureDetector.onTouchEvent(event);
+            return false;
+        });
+        greetingText.setOnClickListener(v -> openCurrentGreetingFullScreen());
+        root.addView(greetingText, marginTop(6));
+
+        root.addView(greetingNavigation("下方"), marginTop(7));
+
+        TextView hint = new TextView(this);
+        hint.setText("提示：PNG 和 JSON 角色卡都支持开场白左右滑动；上方和下方均有“上一个 / 下一个”。 ");
+        hint.setTextSize(12);
+        hint.setPadding(0, dp(12), 0, 0);
+        root.addView(hint);
+
+        setContentView(page);
+    }
+
+    private void buildPngHeader(LinearLayout root) {
         LinearLayout imageArea = new LinearLayout(this);
         imageArea.setOrientation(LinearLayout.HORIZONTAL);
         imageArea.setGravity(Gravity.CENTER_VERTICAL);
@@ -109,86 +188,39 @@ public class CardDetailActivity extends Activity {
 
         favoriteButton = button("");
         favoriteButton.setOnClickListener(v -> toggleFavorite());
-        imageActions.addView(favoriteButton, new LinearLayout.LayoutParams(dp(112), dp(64)));
+        imageActions.addView(favoriteButton,
+                new LinearLayout.LayoutParams(dp(112), dp(64)));
 
         Button imageFullScreen = button("图片全屏");
         imageFullScreen.setContentDescription("全屏查看图片");
         imageFullScreen.setOnClickListener(v -> openImageFullScreen());
-        LinearLayout.LayoutParams imageFullParams = new LinearLayout.LayoutParams(dp(112), dp(64));
+        LinearLayout.LayoutParams imageFullParams =
+                new LinearLayout.LayoutParams(dp(112), dp(64));
         imageFullParams.topMargin = dp(8);
         imageActions.addView(imageFullScreen, imageFullParams);
 
         imageArea.addView(imageActions);
         root.addView(imageArea, matchWrap());
-        updateFavoriteButton();
+    }
 
-        LinearLayout personaHeader = new LinearLayout(this);
-        personaHeader.setOrientation(LinearLayout.HORIZONTAL);
-        personaHeader.setGravity(Gravity.CENTER_VERTICAL);
-        TextView personaTitle = sectionTitle("CHAR 人设");
-        personaHeader.addView(personaTitle, new LinearLayout.LayoutParams(0,
+    private void buildJsonHeader(LinearLayout root) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(12), dp(12), dp(12), dp(12));
+        row.setBackgroundColor(0xfff1f1f1);
+
+        TextView info = new TextView(this);
+        info.setText("JSON 角色卡没有内嵌封面。\n人设、开场白、收藏和移动功能仍可正常使用。 ");
+        info.setTextSize(14);
+        row.addView(info, new LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        Button fullPersona = button("全屏查看人设");
-        fullPersona.setOnClickListener(v -> openFullText("CHAR 人设", card.persona));
-        personaHeader.addView(fullPersona, new LinearLayout.LayoutParams(dp(142), dp(52)));
-        root.addView(personaHeader, marginTop(16));
 
-        TextView persona = contentBox(card.persona);
-        persona.setMaxLines(12);
-        persona.setOnClickListener(v -> openFullText("CHAR 人设", card.persona));
-        root.addView(persona, marginTop(6));
-
-        LinearLayout greetingHeader = new LinearLayout(this);
-        greetingHeader.setOrientation(LinearLayout.HORIZONTAL);
-        greetingHeader.setGravity(Gravity.CENTER_VERTICAL);
-        greetingTitle = sectionTitle("");
-        greetingHeader.addView(greetingTitle, new LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        Button fullGreeting = button("全屏查看开场白");
-        fullGreeting.setOnClickListener(v -> openCurrentGreetingFullScreen());
-        greetingHeader.addView(fullGreeting, new LinearLayout.LayoutParams(dp(154), dp(52)));
-        root.addView(greetingHeader, marginTop(18));
-
-        // 非全屏状态也在正文上方放一组切换按钮。
-        root.addView(greetingNavigation("上方"), marginTop(6));
-
-        greetingText = contentBox("");
-        greetingText.setMinHeight(dp(240));
-        gestureDetector = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
-            @Override
-            public boolean onDown(MotionEvent e) {
-                return true;
-            }
-
-            @Override
-            public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
-                if (e1 == null || e2 == null) return false;
-                float distance = e2.getX() - e1.getX();
-                float vertical = e2.getY() - e1.getY();
-                if (Math.abs(distance) < dp(60) || Math.abs(distance) <= Math.abs(vertical)
-                        || Math.abs(velocityX) < 300) return false;
-                if (distance < 0) nextGreeting();
-                else previousGreeting();
-                return true;
-            }
-        });
-        greetingText.setOnTouchListener((v, event) -> {
-            gestureDetector.onTouchEvent(event);
-            return false;
-        });
-        greetingText.setOnClickListener(v -> openCurrentGreetingFullScreen());
-        root.addView(greetingText, marginTop(6));
-
-        // 正文下方继续保留一组，长开场白看完后不用回到顶部。
-        root.addView(greetingNavigation("下方"), marginTop(7));
-
-        TextView hint = new TextView(this);
-        hint.setText("提示：开场白在非全屏和全屏状态下都可以左右滑动；上方和下方均有“上一个 / 下一个”。 ");
-        hint.setTextSize(12);
-        hint.setPadding(0, dp(12), 0, 0);
-        root.addView(hint);
-
-        setContentView(page);
+        favoriteButton = button("");
+        favoriteButton.setOnClickListener(v -> toggleFavorite());
+        row.addView(favoriteButton,
+                new LinearLayout.LayoutParams(dp(112), dp(64)));
+        root.addView(row, matchWrap());
     }
 
     private LinearLayout greetingNavigation(String position) {
@@ -206,6 +238,7 @@ public class CardDetailActivity extends Activity {
     }
 
     private void openImageFullScreen() {
+        if (!card.hasCoverImage()) return;
         Intent intent = new Intent(this, FullScreenImageActivity.class);
         intent.putExtra("image_uri", card.uri);
         startActivity(intent);
