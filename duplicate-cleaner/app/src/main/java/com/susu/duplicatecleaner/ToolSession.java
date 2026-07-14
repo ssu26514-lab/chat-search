@@ -4,6 +4,7 @@ final class ToolSession {
     enum Mode {
         DUPLICATE,
         SEMANTIC_DUPLICATE,
+        PLAIN_PNG_CLEANUP,
         RENAME,
         BROWSER
     }
