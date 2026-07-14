@@ -28,7 +28,7 @@ public class HomeActivity extends Activity {
         root.addView(title);
 
         TextView note = new TextView(this);
-        note.setText("四个功能完全独立，不会同时运行。进入任意功能后都需要重新选择文件夹并重新扫描；浏览功能的收藏夹会单独暂存在应用中，直到移动或取消收藏。");
+        note.setText("五个功能完全独立，不会同时运行。进入任意功能后都需要重新选择文件夹并重新扫描；浏览功能的收藏夹会单独暂存在应用中，直到移动或取消收藏。");
         note.setTextSize(15);
         note.setPadding(0, dp(10), 0, dp(24));
         root.addView(note);
@@ -49,10 +49,21 @@ public class HomeActivity extends Activity {
         root.addView(semanticButton, marginTop(0));
 
         TextView semanticDesc = new TextView(this);
-        semanticDesc.setText("识别“文件不同但导入后内容一样”的角色卡。分别展示封面、大小、chara/ccv3 兼容性，以及人设、开场白、世界书、正则和扩展差异；有效内容完全一致时可明确选择保留一个。 ");
+        semanticDesc.setText("识别“文件不同但导入后内容一样”的角色卡。展示封面、大小、chara/ccv3 兼容性，以及人设、开场白、世界书、正则和扩展差异；有效内容完全一致时可明确选择保留一个。 ");
         semanticDesc.setTextSize(13);
         semanticDesc.setPadding(dp(6), dp(8), dp(6), dp(18));
         root.addView(semanticDesc);
+
+        Button plainPngButton = button("无角色卡内容 PNG 筛选");
+        plainPngButton.setOnClickListener(v -> openFeature(
+                ToolSession.Mode.PLAIN_PNG_CLEANUP));
+        root.addView(plainPngButton, marginTop(0));
+
+        TextView plainPngDesc = new TextView(this);
+        plainPngDesc.setText("筛出角色卡文件夹里的普通 PNG 和疑似损坏文件。普通图片可移动或删除；有 chara/ccv3 但解析失败、或 PNG 无法完整读取的文件只能移动到待修复文件夹。 ");
+        plainPngDesc.setTextSize(13);
+        plainPngDesc.setPadding(dp(6), dp(8), dp(6), dp(18));
+        root.addView(plainPngDesc);
 
         Button renameButton = button("角色卡自动改名");
         renameButton.setOnClickListener(v -> openFeature(ToolSession.Mode.RENAME));
@@ -89,6 +100,8 @@ public class HomeActivity extends Activity {
             target = MainActivity.class;
         } else if (mode == ToolSession.Mode.SEMANTIC_DUPLICATE) {
             target = SemanticDuplicateActivity.class;
+        } else if (mode == ToolSession.Mode.PLAIN_PNG_CLEANUP) {
+            target = PlainPngCleanupActivity.class;
         } else if (mode == ToolSession.Mode.RENAME) {
             target = GuardedCardRenamerActivity.class;
         } else {
