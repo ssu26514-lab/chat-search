@@ -32,8 +32,8 @@ jobs:
         shell: pwsh
         run: |
           dotnet restore card-tools-windows/tests/CardTools.Tests/CardTools.Tests.csproj
-          dotnet restore card-tools-windows/src/CardTools.Win/CardTools.Win.csproj
-          dotnet restore card-tools-windows/src/CardTools.Cli/CardTools.Cli.csproj
+          dotnet restore card-tools-windows/src/CardTools.Win/CardTools.Win.csproj --runtime win-x64
+          dotnet restore card-tools-windows/src/CardTools.Cli/CardTools.Cli.csproj --runtime win-x64
 
       - name: Run core tests
         shell: pwsh
