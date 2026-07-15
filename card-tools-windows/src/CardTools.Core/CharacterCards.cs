@@ -11,14 +11,20 @@ public static class CharacterCardParser
 {
     private const int MaxTextChunkBytes = 128 * 1024 * 1024;
 
-    private static readonly HashSet<string> IgnoredMetadataKeys = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly byte[] PngSignature =
     {
-        "creator_notes", "creatorcomment", "creator_comment", "creator",
-        "creation_date", "created_at", "modified_at", "modification_date",
-        "character_version", "version_name", "source", "source_url",
-        "_build", "build", "build_id", "wm", "watermark", "watermark_id",
-        "exported_at", "last_modified", "avatar", "avatar_path"
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A
     };
+
+    private static readonly HashSet<string> IgnoredMetadataKeys =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "creator_notes", "creatorcomment", "creator_comment", "creator",
+            "creation_date", "created_at", "modified_at", "modification_date",
+            "character_version", "version_name", "source", "source_url",
+            "_build", "build", "build_id", "wm", "watermark", "watermark_id",
+            "exported_at", "last_modified", "avatar", "avatar_path"
+        };
 
     public static bool IsSupportedCardFile(string path)
     {
@@ -27,7 +33,8 @@ public static class CharacterCardParser
             || extension.Equals(".json", StringComparison.OrdinalIgnoreCase);
     }
 
-    public static bool TryParse(string path, out ParsedCharacterCard? card, out string reason)
+    public static bool TryParse(string path, out ParsedCharacterCard? card,
+        out string reason)
     {
         try
         {
@@ -72,19 +79,16 @@ public static class CharacterCardParser
         }
 
         if (!LooksLikeCharacterCard(root, out string detectionReason))
-        {
             throw new InvalidDataException($"不是角色卡：{detectionReason}");
-        }
 
         JsonObject data = root["data"] as JsonObject ?? root;
         string name = ReadString(data, "name");
         if (string.IsNullOrWhiteSpace(name))
-        {
             name = Path.GetFileNameWithoutExtension(fullPath);
-        }
 
         var personaParts = new List<string>();
-        AddSection(personaParts, "角色描述", ReadString(data, "description", "char_persona"));
+        AddSection(personaParts, "角色描述",
+            ReadString(data, "description", "char_persona"));
         AddSection(personaParts, "性格", ReadString(data, "personality"));
         AddSection(personaParts, "场景", ReadString(data, "scenario"));
         AddSection(personaParts, "示例对话", ReadString(data, "mes_example"));
@@ -98,17 +102,16 @@ public static class CharacterCardParser
         {
             foreach (JsonNode? node in alternatives)
             {
-                if (node is JsonValue value && value.TryGetValue(out string? text))
-                {
+                if (node is JsonValue value
+                    && value.TryGetValue(out string? text))
                     AddGreeting(greetings, text);
-                }
             }
         }
 
         JsonObject effective = BuildEffectiveContent(data);
         JsonObject personaObject = BuildPersonaContent(data);
         JsonArray greetingArray = BuildGreetingContent(data);
-        JsonNode? worldBook = data["character_book"]?.DeepClone();
+        JsonNode? worldBook = CleanNode(data["character_book"]);
         JsonNode? extensions = CleanNode(data["extensions"]);
 
         return new ParsedCharacterCard(
@@ -185,34 +188,29 @@ public static class CharacterCardParser
 
     private static JsonObject ReadPngCardPayload(string path)
     {
-        using FileStream stream = new(path, FileMode.Open, FileAccess.Read, FileShare.Read,
-            1024 * 1024, FileOptions.SequentialScan);
-        Span<byte> signature = stackalloc byte[8];
+        using FileStream stream = new(path, FileMode.Open, FileAccess.Read,
+            FileShare.Read, 1024 * 1024, FileOptions.SequentialScan);
+        byte[] signature = new byte[8];
         stream.ReadExactly(signature);
-        ReadOnlySpan<byte> expected = new byte[]
-        {
-            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A
-        };
-        if (!signature.SequenceEqual(expected))
-        {
+        if (!signature.AsSpan().SequenceEqual(PngSignature))
             throw new InvalidDataException("扩展名是 PNG，但文件内容不是 PNG");
-        }
 
         JsonObject? firstValid = null;
+        byte[] header = new byte[8];
         while (stream.Position < stream.Length)
         {
-            Span<byte> header = stackalloc byte[8];
+            if (stream.Length - stream.Position < 12)
+                throw new InvalidDataException("PNG 文件在数据块头部提前结束");
+
             stream.ReadExactly(header);
-            int length = BinaryPrimitives.ReadInt32BigEndian(header[..4]);
+            int length = BinaryPrimitives.ReadInt32BigEndian(header.AsSpan(0, 4));
             if (length < 0)
-            {
                 throw new InvalidDataException("PNG 数据块长度异常");
-            }
-            string type = Encoding.ASCII.GetString(header[4..]);
+            string type = Encoding.ASCII.GetString(header, 4, 4);
             if (length > MaxTextChunkBytes && type is "tEXt" or "zTXt" or "iTXt")
-            {
                 throw new InvalidDataException("PNG 角色卡文本数据块超过 128 MB");
-            }
+            if (stream.Length - stream.Position < (long)length + 4)
+                throw new InvalidDataException("PNG 数据块内容不完整");
 
             byte[] data = new byte[length];
             stream.ReadExactly(data);
@@ -222,42 +220,40 @@ public static class CharacterCardParser
             {
                 (string Keyword, string Text)? entry = ParsePngText(type, data);
                 if (entry is not null
-                    && (entry.Value.Keyword.Equals("chara", StringComparison.OrdinalIgnoreCase)
-                        || entry.Value.Keyword.Equals("ccv3", StringComparison.OrdinalIgnoreCase)))
+                    && (entry.Value.Keyword.Equals("chara",
+                            StringComparison.OrdinalIgnoreCase)
+                        || entry.Value.Keyword.Equals("ccv3",
+                            StringComparison.OrdinalIgnoreCase)))
                 {
                     try
                     {
                         JsonObject payload = DecodeCardPayload(entry.Value.Text);
                         firstValid ??= payload;
-                        if (entry.Value.Keyword.Equals("ccv3", StringComparison.OrdinalIgnoreCase))
-                        {
+                        if (entry.Value.Keyword.Equals("ccv3",
+                            StringComparison.OrdinalIgnoreCase))
                             return payload;
-                        }
                     }
-                    catch (Exception exception) when (exception is JsonException or FormatException)
+                    catch (Exception exception) when (exception is JsonException
+                        or FormatException)
                     {
-                        // Continue: another chara/ccv3 chunk may still be valid.
+                        // Another chara/ccv3 chunk may still be valid.
                     }
                 }
             }
 
-            if (type.Equals("IEND", StringComparison.Ordinal))
-            {
-                break;
-            }
+            if (type.Equals("IEND", StringComparison.Ordinal)) break;
         }
 
         return firstValid
-            ?? throw new InvalidDataException("PNG 内没有可解析的 chara 或 ccv3 角色卡数据");
+            ?? throw new InvalidDataException(
+                "PNG 内没有可解析的 chara 或 ccv3 角色卡数据");
     }
 
-    private static (string Keyword, string Text)? ParsePngText(string type, byte[] data)
+    private static (string Keyword, string Text)? ParsePngText(
+        string type, byte[] data)
     {
         int firstZero = Array.IndexOf(data, (byte)0);
-        if (firstZero <= 0)
-        {
-            return null;
-        }
+        if (firstZero <= 0) return null;
         string keyword = Encoding.Latin1.GetString(data, 0, firstZero);
 
         if (type == "tEXt")
@@ -265,38 +261,27 @@ public static class CharacterCardParser
             return (keyword, Encoding.Latin1.GetString(data, firstZero + 1,
                 data.Length - firstZero - 1));
         }
-
         if (type == "zTXt")
         {
             int start = firstZero + 2;
-            if (start > data.Length)
-            {
-                return null;
-            }
-            return (keyword, Encoding.Latin1.GetString(Inflate(data.AsSpan(start))));
+            if (start > data.Length) return null;
+            return (keyword,
+                Encoding.Latin1.GetString(Inflate(data.AsSpan(start))));
         }
 
         int position = firstZero + 1;
-        if (position + 2 > data.Length)
-        {
-            return null;
-        }
+        if (position + 2 > data.Length) return null;
         int compressionFlag = data[position];
         position += 2;
         int languageEnd = Array.IndexOf(data, (byte)0, position);
-        if (languageEnd < 0)
-        {
-            return null;
-        }
+        if (languageEnd < 0) return null;
         position = languageEnd + 1;
         int translatedEnd = Array.IndexOf(data, (byte)0, position);
-        if (translatedEnd < 0)
-        {
-            return null;
-        }
+        if (translatedEnd < 0) return null;
         position = translatedEnd + 1;
         ReadOnlySpan<byte> textBytes = data.AsSpan(position);
-        byte[] decoded = compressionFlag == 1 ? Inflate(textBytes) : textBytes.ToArray();
+        byte[] decoded = compressionFlag == 1
+            ? Inflate(textBytes) : textBytes.ToArray();
         return (keyword, Encoding.UTF8.GetString(decoded));
     }
 
@@ -323,27 +308,22 @@ public static class CharacterCardParser
             ?? throw new JsonException("Base64 解码后的角色卡不是 JSON 对象");
     }
 
-    private static JsonObject BuildEffectiveContent(JsonObject data)
-    {
-        JsonNode? cleaned = CleanNode(data);
-        return cleaned as JsonObject ?? new JsonObject();
-    }
+    private static JsonObject BuildEffectiveContent(JsonObject data) =>
+        CleanNode(data) as JsonObject ?? new JsonObject();
 
     private static JsonObject BuildPersonaContent(JsonObject data)
     {
         string[] keys =
         {
             "name", "nickname", "description", "char_persona", "personality",
-            "scenario", "mes_example", "system_prompt", "post_history_instructions",
-            "group_only_greetings"
+            "scenario", "mes_example", "system_prompt",
+            "post_history_instructions", "group_only_greetings"
         };
         var result = new JsonObject();
         foreach (string key in keys)
         {
             if (data[key] is JsonNode value)
-            {
                 result[key] = CleanNode(value);
-            }
         }
         return result;
     }
@@ -351,19 +331,17 @@ public static class CharacterCardParser
     private static JsonArray BuildGreetingContent(JsonObject data)
     {
         var result = new JsonArray();
-        string first = ReadString(data, "first_mes").Trim();
-        if (first.Length > 0)
-        {
-            result.Add(first);
-        }
+        string first = NormalizeText(ReadString(data, "first_mes"));
+        if (first.Length > 0) result.Add(first);
         if (data["alternate_greetings"] is JsonArray alternatives)
         {
             foreach (JsonNode? item in alternatives)
             {
-                if (item is JsonValue value && value.TryGetValue(out string? text)
-                    && !string.IsNullOrWhiteSpace(text))
+                if (item is JsonValue value
+                    && value.TryGetValue(out string? text))
                 {
-                    result.Add(text.Trim());
+                    string cleaned = NormalizeText(text);
+                    if (cleaned.Length > 0) result.Add(cleaned);
                 }
             }
         }
@@ -372,25 +350,16 @@ public static class CharacterCardParser
 
     private static JsonNode? CleanNode(JsonNode? node)
     {
-        if (node is null)
-        {
-            return null;
-        }
+        if (node is null) return null;
         if (node is JsonObject sourceObject)
         {
             var target = new JsonObject();
             foreach ((string key, JsonNode? value) in sourceObject
                 .OrderBy(pair => pair.Key, StringComparer.Ordinal))
             {
-                if (IgnoredMetadataKeys.Contains(key))
-                {
-                    continue;
-                }
+                if (IgnoredMetadataKeys.Contains(key)) continue;
                 JsonNode? cleaned = CleanNode(value);
-                if (cleaned is not null)
-                {
-                    target[key] = cleaned;
-                }
+                if (cleaned is not null) target[key] = cleaned;
             }
             return target;
         }
@@ -398,62 +367,50 @@ public static class CharacterCardParser
         {
             var target = new JsonArray();
             foreach (JsonNode? value in sourceArray)
-            {
                 target.Add(CleanNode(value));
-            }
             return target;
         }
-        if (node is JsonValue jsonValue && jsonValue.TryGetValue(out string? text))
-        {
-            return JsonValue.Create(NormalizeText(text));
-        }
+        if (node is JsonValue jsonValue
+            && jsonValue.TryGetValue(out string? text))
+            return NormalizeText(text);
         return node.DeepClone();
     }
 
     private static string HashCanonical(JsonNode? node)
     {
-        string canonical = node is null
-            ? "null"
-            : node.ToJsonString(new JsonSerializerOptions { WriteIndented = false });
+        string canonical = node?.ToJsonString() ?? "null";
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(canonical));
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
     private static string NormalizeText(string? text)
     {
-        if (string.IsNullOrEmpty(text))
-        {
-            return string.Empty;
-        }
+        if (string.IsNullOrEmpty(text)) return string.Empty;
         var builder = new StringBuilder(text.Length);
-        foreach (char character in text.Replace("\r\n", "\n", StringComparison.Ordinal)
+        foreach (char character in text
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
             .Replace('\r', '\n'))
         {
-            if (character is '\u200B' or '\u200C' or '\u200D' or '\u2060' or '\uFEFF')
-            {
+            if (character is '\u200B' or '\u200C' or '\u200D'
+                or '\u2060' or '\uFEFF')
                 continue;
-            }
             builder.Append(character);
         }
         return builder.ToString().Trim();
     }
 
-    private static void AddSection(ICollection<string> parts, string title, string value)
+    private static void AddSection(ICollection<string> parts,
+        string title, string value)
     {
         string cleaned = NormalizeText(value);
         if (cleaned.Length > 0)
-        {
             parts.Add($"【{title}】{Environment.NewLine}{cleaned}");
-        }
     }
 
     private static void AddGreeting(ICollection<string> greetings, string? value)
     {
         string cleaned = NormalizeText(value);
-        if (cleaned.Length > 0)
-        {
-            greetings.Add(cleaned);
-        }
+        if (cleaned.Length > 0) greetings.Add(cleaned);
     }
 
     private static bool HasText(JsonObject source, string key) =>
@@ -463,22 +420,19 @@ public static class CharacterCardParser
     {
         foreach (string key in keys)
         {
-            if (source[key] is JsonValue value && value.TryGetValue(out string? text))
-            {
+            if (source[key] is JsonValue value
+                && value.TryGetValue(out string? text))
                 return text ?? string.Empty;
-            }
         }
         return string.Empty;
     }
 
     private static int CountKeys(JsonObject source, params string[] keys)
     {
-        var existing = new HashSet<string>(source.Select(pair => pair.Key),
-            StringComparer.OrdinalIgnoreCase);
+        var existing = new HashSet<string>(
+            source.Select(pair => pair.Key), StringComparer.OrdinalIgnoreCase);
         if (source["data"] is JsonObject data)
-        {
             existing.UnionWith(data.Select(pair => pair.Key));
-        }
         return keys.Count(existing.Contains);
     }
 }
