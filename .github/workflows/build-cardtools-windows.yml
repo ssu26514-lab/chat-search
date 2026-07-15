@@ -41,7 +41,9 @@ jobs:
           dotnet test card-tools-windows/tests/CardTools.Tests/CardTools.Tests.csproj `
             --configuration Release `
             --no-restore `
-            --logger "trx;LogFileName=CardTools-Windows.trx"
+            --logger "trx;LogFileName=CardTools-Windows.trx" 2>&1 |
+            Tee-Object -FilePath CardTools-Windows-build-log.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Publish graphical EXE
         shell: pwsh
@@ -55,7 +57,9 @@ jobs:
             -p:IncludeNativeLibrariesForSelfExtract=true `
             -p:DebugType=None `
             -p:DebugSymbols=false `
-            --output out/CardTools
+            --output out/CardTools 2>&1 |
+            Tee-Object -FilePath CardTools-Windows-gui-build-log.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Publish CMD EXE
         shell: pwsh
@@ -69,7 +73,9 @@ jobs:
             -p:IncludeNativeLibrariesForSelfExtract=true `
             -p:DebugType=None `
             -p:DebugSymbols=false `
-            --output out/CardTools
+            --output out/CardTools 2>&1 |
+            Tee-Object -FilePath CardTools-Windows-cli-build-log.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Package and verify
         shell: pwsh
@@ -86,9 +92,7 @@ jobs:
             Add-Content 'out/CardTools/SHA256.txt' -Encoding UTF8
           Compress-Archive -Path 'out/CardTools/*' `
             -DestinationPath 'CardTools-Windows-v0.1.0.zip' -Force
-          if ((Get-Item 'CardTools-Windows-v0.1.0.zip').Length -le 0) {
-            throw 'ZIP is empty'
-          }
+          if ((Get-Item 'CardTools-Windows-v0.1.0.zip').Length -le 0) { throw 'ZIP is empty' }
           Get-FileHash 'CardTools-Windows-v0.1.0.zip' -Algorithm SHA256 |
             ForEach-Object { $_.Hash.ToLowerInvariant() } |
             Set-Content 'CardTools-Windows-v0.1.0-SHA256.txt' -Encoding UTF8
@@ -104,8 +108,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: CardTools-Windows-test-report
-          path: card-tools-windows/tests/CardTools.Tests/TestResults/
+          name: CardTools-Windows-diagnostics
+          path: |
+            CardTools-Windows-*-log.txt
+            card-tools-windows/tests/CardTools.Tests/TestResults/
           if-no-files-found: ignore
 
       - name: Publish GitHub Release
