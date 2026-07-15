@@ -1,0 +1,130 @@
+name: Build and Test CardTools Windows
+
+on:
+  push:
+    branches:
+      - windows-card-tools
+    paths:
+      - 'card-tools-windows/**'
+      - '.github/workflows/build-cardtools-windows.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'card-tools-windows/**'
+      - '.github/workflows/build-cardtools-windows.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test-build-release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        shell: pwsh
+        run: |
+          dotnet restore card-tools-windows/tests/CardTools.Tests/CardTools.Tests.csproj
+          dotnet restore card-tools-windows/src/CardTools.Win/CardTools.Win.csproj --runtime win-x64
+          dotnet restore card-tools-windows/src/CardTools.Cli/CardTools.Cli.csproj --runtime win-x64
+
+      - name: Run core tests
+        shell: pwsh
+        run: |
+          dotnet test card-tools-windows/tests/CardTools.Tests/CardTools.Tests.csproj `
+            --configuration Release `
+            --no-restore `
+            --logger "trx;LogFileName=CardTools-Windows.trx" 2>&1 |
+            Tee-Object -FilePath CardTools-Windows-build-log.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Publish graphical EXE
+        shell: pwsh
+        run: |
+          dotnet publish card-tools-windows/src/CardTools.Win/CardTools.Win.csproj `
+            --configuration Release `
+            --runtime win-x64 `
+            --self-contained true `
+            --no-restore `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:DebugType=None `
+            -p:DebugSymbols=false `
+            --output out/CardTools 2>&1 |
+            Tee-Object -FilePath CardTools-Windows-gui-build-log.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Publish CMD EXE
+        shell: pwsh
+        run: |
+          dotnet publish card-tools-windows/src/CardTools.Cli/CardTools.Cli.csproj `
+            --configuration Release `
+            --runtime win-x64 `
+            --self-contained true `
+            --no-restore `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:DebugType=None `
+            -p:DebugSymbols=false `
+            --output out/CardTools 2>&1 |
+            Tee-Object -FilePath CardTools-Windows-cli-build-log.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Package and verify
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Test-Path 'out/CardTools/CardTools.exe')) { throw 'GUI EXE missing' }
+          if (-not (Test-Path 'out/CardTools/CardTools.Cli.exe')) { throw 'CLI EXE missing' }
+          Copy-Item 'card-tools-windows/README.md' 'out/CardTools/README.md'
+          Get-FileHash 'out/CardTools/CardTools.exe' -Algorithm SHA256 |
+            ForEach-Object { "CardTools.exe  $($_.Hash.ToLowerInvariant())" } |
+            Set-Content 'out/CardTools/SHA256.txt' -Encoding UTF8
+          Get-FileHash 'out/CardTools/CardTools.Cli.exe' -Algorithm SHA256 |
+            ForEach-Object { "CardTools.Cli.exe  $($_.Hash.ToLowerInvariant())" } |
+            Add-Content 'out/CardTools/SHA256.txt' -Encoding UTF8
+          Compress-Archive -Path 'out/CardTools/*' `
+            -DestinationPath 'CardTools-Windows-v0.1.0.zip' -Force
+          if ((Get-Item 'CardTools-Windows-v0.1.0.zip').Length -le 0) { throw 'ZIP is empty' }
+          Get-FileHash 'CardTools-Windows-v0.1.0.zip' -Algorithm SHA256 |
+            ForEach-Object { $_.Hash.ToLowerInvariant() } |
+            Set-Content 'CardTools-Windows-v0.1.0-SHA256.txt' -Encoding UTF8
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CardTools-Windows-v0.1.0-tested
+          path: |
+            CardTools-Windows-v0.1.0.zip
+            CardTools-Windows-v0.1.0-SHA256.txt
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: CardTools-Windows-diagnostics
+          path: |
+            CardTools-Windows-*-log.txt
+            card-tools-windows/tests/CardTools.Tests/TestResults/
+          if-no-files-found: ignore
+
+      - name: Publish GitHub Release
+        if: github.event_name == 'pull_request'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete windows-v0.1.0 --repo $env:GITHUB_REPOSITORY --yes --cleanup-tag 2>$null
+          gh release create windows-v0.1.0 `
+            'CardTools-Windows-v0.1.0.zip' `
+            'CardTools-Windows-v0.1.0-SHA256.txt' `
+            --repo $env:GITHUB_REPOSITORY `
+            --target windows-card-tools `
+            --title 'CardTools Windows v0.1.0' `
+            --notes 'Windows 原生第一版：严格查重、PNG/JSON 有效内容查重、分类、改名预览与执行、角色卡浏览、安全移动和重新校验删除。'
